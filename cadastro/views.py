@@ -1,12 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.db.models import Q, Sum, F
-from .models import Prestador, ServicoContratado, Especialidade, ContratoUpload, StatusImportacao
+from .models import Prestador, Especialidade, ContratoUpload, StatusImportacao
 from .forms import PrestadorForm, ServicoFormSet, UploadContratoForm
 from .extrator import extrair_contrato
 
 
-# ─── Prestadores ────────────────────────────────────────────────────────────────────────────
+# ─── Prestadores ───────────────────────────────────────────────────────────────────
 
 def prestador_list(request):
     qs = Prestador.objects.prefetch_related("especialidades", "servicos")
@@ -99,7 +99,43 @@ def prestador_delete(request, pk):
     return render(request, "cadastro/prestador_confirm_delete.html", {"prestador": prestador})
 
 
-# ─── Upload / Importação de Contratos ─────────────────────────────────────────────────────
+# ─── Helpers ───────────────────────────────────────────────────────────────────────────
+
+def _resolver_especialidade(nome_extraido: str) -> list:
+    """
+    Dado um nome de especialidade extraído do PDF, busca ou cria o objeto
+    Especialidade correspondente e retorna uma lista com ele (formato
+    aceito pelo campo initial de ModelMultipleChoiceField).
+
+    A busca é case-insensitive e tolera variações com/sem acento
+    (ex: 'Pediatrica' encontra 'Pediátrica').
+    """
+    if not nome_extraido:
+        return []
+
+    # Normaliza o nome extraído
+    nome = nome_extraido.strip()
+
+    # Busca exata (case-insensitive)
+    esp = Especialidade.objects.filter(nome__iexact=nome).first()
+
+    # Busca parcial se não encontrou
+    if not esp:
+        # Remove acento de 'Pediátrica' vs 'Pediatrica' usando contains
+        for token in nome.split():
+            if len(token) >= 5:
+                esp = Especialidade.objects.filter(nome__icontains=token).first()
+                if esp:
+                    break
+
+    # Cria automaticamente se não existe
+    if not esp:
+        esp = Especialidade.objects.create(nome=nome, ativa=True)
+
+    return [esp]
+
+
+# ─── Upload / Importação de Contratos ──────────────────────────────────────────────────
 
 def contrato_upload(request):
     """Recebe o PDF, extrai os dados e redireciona para a tela de revisão."""
@@ -112,30 +148,27 @@ def contrato_upload(request):
 
             dados = extrair_contrato(contrato.arquivo.path)
 
-            contrato.razao_social_extraida = dados["razao_social"]
-            contrato.cnpj_extraido = dados["cnpj"]
-            contrato.objeto_extraido = dados["objeto"]
-            contrato.servicos_extraidos = dados["servicos"]
+            contrato.razao_social_extraida  = dados["razao_social"]
+            contrato.cnpj_extraido          = dados["cnpj"]
+            contrato.objeto_extraido        = dados["objeto"]
+            contrato.servicos_extraidos     = dados["servicos"]
             contrato.especialidade_extraida = dados["especialidade"]
-            contrato.data_inicio_extraida = dados["data_assinatura"]
-            contrato.data_fim_extraida = dados["data_fim"]
+            contrato.data_inicio_extraida   = dados["data_assinatura"]
+            contrato.data_fim_extraida      = dados["data_fim"]
             contrato.meses_vigencia_extraidos = dados["meses_vigencia"]
-            contrato.valor_mensal_extraido = dados["valor_mensal"]
-            contrato.valor_global_extraido = dados["valor_global"]
+            contrato.valor_mensal_extraido  = dados["valor_mensal"]
+            contrato.valor_global_extraido  = dados["valor_global"]
             contrato.numero_processo_extraido = dados["numero_processo"]
-            contrato.erro_extracao = dados["erro"] or ""
-            # Armazena representante legal extraído para uso na revisão
-            contrato._nome_representante = dados.get("nome_representante", "")
-            contrato._cpf_representante = dados.get("cpf_representante", "")
+            contrato.erro_extracao          = dados["erro"] or ""
 
             if dados["erro"]:
                 contrato.status = StatusImportacao.ERRO
             contrato.save()
 
-            # Passa os dados do representante via session para a próxima view
-            request.session[f"rep_{contrato.pk}"] = {
-                "nome": dados.get("nome_representante", ""),
-                "cpf": dados.get("cpf_representante", ""),
+            # Persiste dados extras na sessão para a próxima view
+            request.session[f"imp_{contrato.pk}"] = {
+                "nome_representante": dados.get("nome_representante", ""),
+                "cpf_representante":  dados.get("cpf_representante",  ""),
             }
 
             return redirect("cadastro:contrato_revisao", pk=contrato.pk)
@@ -147,20 +180,25 @@ def contrato_upload(request):
 
 
 def contrato_revisao(request, pk):
-    """Exibe os dados extraídos para revisão. Permite confirmar e criar o Prestador."""
+    """Exibe os dados extraídos para revisão e permite confirmar o cadastro."""
     contrato = get_object_or_404(ContratoUpload, pk=pk)
 
-    # Recupera dados do representante armazenados na sessão
-    rep = request.session.pop(f"rep_{contrato.pk}", {})
+    # Recupera dados extras da sessão (descartados após leitura)
+    extras = request.session.pop(f"imp_{contrato.pk}", {})
+
+    # Resolve a especialidade extraída para objeto(s) do model
+    especialidades_iniciais = _resolver_especialidade(contrato.especialidade_extraida)
 
     initial = {
-        "nome_empresa": contrato.razao_social_extraida,
-        "cnpj": contrato.cnpj_extraido,
+        "nome_empresa":        contrato.razao_social_extraida,
+        "cnpj":                contrato.cnpj_extraido,
         "data_inicio_contrato": contrato.data_inicio_extraida,
-        "data_fim_contrato": contrato.data_fim_extraida,
-        "numero_processo": contrato.numero_processo_extraido,
-        "nome_representante": rep.get("nome", ""),
-        "cpf_representante": rep.get("cpf", ""),
+        "data_fim_contrato":   contrato.data_fim_extraida,
+        "numero_processo":     contrato.numero_processo_extraido,
+        "nome_representante":  extras.get("nome_representante", ""),
+        "cpf_representante":   extras.get("cpf_representante",  ""),
+        # M2M: passar lista de instâncias faz o widget marcar os checkboxes
+        "especialidades":      especialidades_iniciais,
     }
 
     if request.method == "POST":
@@ -171,7 +209,7 @@ def contrato_revisao(request, pk):
             formset.instance = prestador
             formset.save()
             contrato.prestador = prestador
-            contrato.status = StatusImportacao.CONFIRMADO
+            contrato.status    = StatusImportacao.CONFIRMADO
             contrato.save()
             messages.success(
                 request,
@@ -180,12 +218,15 @@ def contrato_revisao(request, pk):
             return redirect("cadastro:prestador_detail", pk=prestador.pk)
     else:
         form = PrestadorForm(initial=initial)
+        # Força o widget a pré-selecionar os checkboxes da especialidade
+        if especialidades_iniciais:
+            form.fields["especialidades"].initial = especialidades_iniciais
         formset = ServicoFormSet()
 
     return render(request, "cadastro/contrato_revisao.html", {
         "contrato": contrato,
-        "form": form,
-        "formset": formset,
+        "form":     form,
+        "formset":  formset,
     })
 
 
