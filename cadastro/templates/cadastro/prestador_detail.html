@@ -1,0 +1,112 @@
+{% extends "cadastro/base.html" %}
+{% block title %}{{ prestador.nome_empresa }} – AME{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{% url 'cadastro:prestador_list' %}" style="font-size:.875rem;color:var(--color-text-muted)">← Voltar</a>
+    <h1 class="page-title" style="margin-top:.25rem">{{ prestador.nome_empresa }}</h1>
+    <span class="badge {% if prestador.ativo %}badge-active{% else %}badge-inactive{% endif %}">
+      {% if prestador.ativo %}Ativo{% else %}Inativo{% endif %}
+    </span>
+    {% if prestador.numero_processo %}
+    <span style="margin-left:.5rem;font-size:.875rem;color:var(--color-text-muted)">Processo nº {{ prestador.numero_processo }}</span>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:.75rem">
+    <a href="{% url 'cadastro:prestador_edit' prestador.pk %}" class="btn btn-secondary">Editar</a>
+    <a href="{% url 'cadastro:prestador_delete' prestador.pk %}" class="btn btn-danger">Excluir</a>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem">
+  <div class="valor-box">
+    <span class="label">Valor Estimado Mensal</span>
+    <span class="value">R$ {{ valor_mensal|floatformat:2 }}</span>
+  </div>
+  <div class="valor-box" style="background:linear-gradient(135deg,#0c4e54 0%,#0f3638 100%)">
+    <span class="label">Valor Global Estimado ({{ meses_vigencia }} meses)</span>
+    <span class="value">R$ {{ valor_global|floatformat:2 }}</span>
+  </div>
+  <div class="card" style="display:flex;flex-direction:column;gap:.25rem">
+    <span class="detail-label">Vigência</span>
+    <span class="detail-value">{{ prestador.data_inicio_contrato|date:"d/m/Y" }} a {{ prestador.data_fim_contrato|date:"d/m/Y" }}</span>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="card">
+    <h2 class="form-section-title">Dados da Empresa</h2>
+    <div style="display:grid;gap:.75rem">
+      <div><span class="detail-label">CNPJ</span><div class="detail-value">{{ prestador.cnpj }}</div></div>
+      <div><span class="detail-label">Inscrição Municipal</span><div class="detail-value">{{ prestador.inscricao_municipal|default:"—" }}</div></div>
+      <div><span class="detail-label">Inscrição Estadual</span><div class="detail-value">{{ prestador.inscricao_estadual }}</div></div>
+      <div><span class="detail-label">Endereço</span><div class="detail-value">{{ prestador.endereco_completo }}</div></div>
+      <div><span class="detail-label">Telefone</span><div class="detail-value">{{ prestador.telefone }}</div></div>
+      <div><span class="detail-label">E-mail</span><div class="detail-value">{{ prestador.email }}</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2 class="form-section-title">Representante Legal</h2>
+    <div style="display:grid;gap:.75rem;margin-bottom:1.25rem">
+      <div><span class="detail-label">Nome</span><div class="detail-value">{{ prestador.nome_representante }}</div></div>
+      <div><span class="detail-label">CPF</span><div class="detail-value">{{ prestador.cpf_representante }}</div></div>
+      <div><span class="detail-label">CRM</span><div class="detail-value">{{ prestador.crm_representante }}</div></div>
+    </div>
+    <h2 class="form-section-title">Testemunha</h2>
+    <div style="display:grid;gap:.75rem">
+      <div><span class="detail-label">Nome</span><div class="detail-value">{{ prestador.nome_testemunha }}</div></div>
+      <div><span class="detail-label">Telefone</span><div class="detail-value">{{ prestador.telefone_testemunha }}</div></div>
+      <div><span class="detail-label">E-mail</span><div class="detail-value">{{ prestador.email_testemunha }}</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem">
+  <h2 class="form-section-title">Especialidades Médicas</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+    {% for esp in prestador.especialidades.all %}
+    <span class="badge badge-esp" style="font-size:.9rem;padding:.3rem .9rem">{{ esp.nome }}</span>
+    {% empty %}
+    <span style="color:var(--color-text-muted)">Nenhuma especialidade cadastrada.</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2 class="form-section-title">Serviços Contratados</h2>
+  {% if prestador.servicos.all %}
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>Descrição</th>
+          <th>Tipo</th>
+          <th>Unid.</th>
+          <th>Qtde./Mês</th>
+          <th>Valor Unit.</th>
+          <th>Total/Mês</th>
+          <th>Prazo Laudo</th>
+          <th>Remoto?</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in prestador.servicos.all %}
+        <tr>
+          <td>{{ s.descricao }}</td>
+          <td>{{ s.get_tipo_servico_display }}</td>
+          <td>{{ s.unidade_medida }}</td>
+          <td>{{ s.quantidade_estimada_mes }}</td>
+          <td>R$ {{ s.valor_unitario|floatformat:2 }}</td>
+          <td>R$ {{ s.valor_total_estimado_mes|floatformat:2 }}</td>
+          <td>{% if s.prazo_entrega_laudo_dias %}{{ s.prazo_entrega_laudo_dias }} d.u.{% else %}—{% endif %}</td>
+          <td>{% if s.remoto %}✔{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--color-text-muted)">Nenhum serviço cadastrado.</p>
+  {% endif %}
+</div>
+{% endblock %}

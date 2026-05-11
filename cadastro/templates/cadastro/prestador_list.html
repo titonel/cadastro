@@ -1,0 +1,91 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Prestadores – AME Caraguatatuba{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Prestadores Cadastrados</h1>
+  <a href="{% url 'cadastro:prestador_create' %}" class="btn btn-primary">+ Novo Prestador</a>
+</div>
+
+<div class="card">
+  <form method="get" class="search-bar">
+    <div class="form-group">
+      <label>Buscar</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Empresa, CNPJ ou representante…" class="form-control" />
+    </div>
+    <div class="form-group">
+      <label>Especialidade</label>
+      <select name="especialidade" class="form-control">
+        <option value="">Todas</option>
+        {% for esp in especialidades %}
+        <option value="{{ esp.pk }}" {% if especialidade_id == esp.pk|stringformat:"s" %}selected{% endif %}>{{ esp.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select name="ativo" class="form-control">
+        <option value="">Todos</option>
+        <option value="1" {% if ativo == "1" %}selected{% endif %}>Ativo</option>
+        <option value="0" {% if ativo == "0" %}selected{% endif %}>Inativo</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    <a href="{% url 'cadastro:prestador_list' %}" class="btn btn-secondary">Limpar</a>
+  </form>
+
+  {% if prestadores %}
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>Empresa / CNPJ</th>
+          <th>Representante</th>
+          <th>CRM</th>
+          <th>Especialidades</th>
+          <th>Vigência</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in prestadores %}
+        <tr>
+          <td>
+            <strong><a href="{% url 'cadastro:prestador_detail' p.pk %}">{{ p.nome_empresa }}</a></strong>
+            <br><span style="font-size:.8rem;color:var(--color-text-muted)">{{ p.cnpj }}</span>
+          </td>
+          <td>{{ p.nome_representante }}</td>
+          <td>{{ p.crm_representante }}</td>
+          <td>
+            {% for esp in p.especialidades.all %}
+            <span class="badge badge-esp">{{ esp.nome }}</span>
+            {% endfor %}
+          </td>
+          <td style="white-space:nowrap;font-size:.85rem">
+            {{ p.data_inicio_contrato|date:"d/m/Y" }} –<br>{{ p.data_fim_contrato|date:"d/m/Y" }}
+          </td>
+          <td>
+            {% if p.ativo %}
+            <span class="badge badge-active">Ativo</span>
+            {% else %}
+            <span class="badge badge-inactive">Inativo</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap">
+            <a href="{% url 'cadastro:prestador_edit' p.pk %}" class="btn btn-secondary btn-sm">Editar</a>
+            <a href="{% url 'cadastro:prestador_delete' p.pk %}" class="btn btn-danger btn-sm">Excluir</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:3rem;color:var(--color-text-muted)">
+    <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
+    <p>Nenhum prestador encontrado.</p>
+    <a href="{% url 'cadastro:prestador_create' %}" class="btn btn-primary" style="margin-top:1rem">Cadastrar primeiro prestador</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

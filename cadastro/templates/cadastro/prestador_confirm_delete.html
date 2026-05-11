@@ -1,0 +1,20 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Excluir Prestador – AME{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Confirmar Exclusão</h1>
+</div>
+<div class="card">
+  <p style="margin-bottom:1.25rem">
+    Tem certeza que deseja excluir o prestador <strong>{{ prestador.nome_empresa }}</strong>?<br>
+    <span style="color:var(--color-text-muted);font-size:.875rem">Esta ação não pode ser desfeita.</span>
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    <div style="display:flex;gap:.75rem">
+      <button type="submit" class="btn btn-danger">Confirmar Exclusão</button>
+      <a href="{% url 'cadastro:prestador_detail' prestador.pk %}" class="btn btn-secondary">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

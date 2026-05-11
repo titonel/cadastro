@@ -1,0 +1,122 @@
+{% extends "cadastro/base.html" %}
+{% block title %}{% if action == "Novo" %}Novo Prestador{% else %}Editar {{ prestador.nome_empresa }}{% endif %} – AME{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{% url 'cadastro:prestador_list' %}" style="font-size:.875rem;color:var(--color-text-muted)">← Voltar</a>
+    <h1 class="page-title" style="margin-top:.25rem">{{ action }} Prestador</h1>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="card form-section">
+    <h2 class="form-section-title">1. Dados da Empresa</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_empresa.label }}</label>{{ form.nome_empresa }}</div>
+      <div class="form-group"><label>{{ form.cnpj.label }}</label>{{ form.cnpj }}</div>
+      <div class="form-group"><label>{{ form.inscricao_municipal.label }}</label>{{ form.inscricao_municipal }}</div>
+      <div class="form-group"><label>{{ form.inscricao_estadual.label }}</label>{{ form.inscricao_estadual }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">2. Endereço</h2>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:span 2"><label>{{ form.logradouro.label }}</label>{{ form.logradouro }}</div>
+      <div class="form-group"><label>{{ form.numero.label }}</label>{{ form.numero }}</div>
+      <div class="form-group"><label>{{ form.complemento.label }}</label>{{ form.complemento }}</div>
+      <div class="form-group"><label>{{ form.bairro.label }}</label>{{ form.bairro }}</div>
+      <div class="form-group"><label>{{ form.cidade.label }}</label>{{ form.cidade }}</div>
+      <div class="form-group"><label>{{ form.estado.label }}</label>{{ form.estado }}</div>
+      <div class="form-group"><label>{{ form.cep.label }}</label>{{ form.cep }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">3. Contato</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>{{ form.telefone.label }}</label>{{ form.telefone }}</div>
+      <div class="form-group"><label>{{ form.email.label }}</label>{{ form.email }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">4. Representante Legal</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_representante.label }}</label>{{ form.nome_representante }}</div>
+      <div class="form-group"><label>{{ form.cpf_representante.label }}</label>{{ form.cpf_representante }}</div>
+      <div class="form-group"><label>{{ form.crm_representante.label }}</label>{{ form.crm_representante }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">5. Testemunha</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_testemunha.label }}</label>{{ form.nome_testemunha }}</div>
+      <div class="form-group"><label>{{ form.telefone_testemunha.label }}</label>{{ form.telefone_testemunha }}</div>
+      <div class="form-group"><label>{{ form.email_testemunha.label }}</label>{{ form.email_testemunha }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">6. Especialidades Médicas</h2>
+    {{ form.especialidades }}
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">7. Vigência do Contrato</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>{{ form.data_inicio_contrato.label }}</label>{{ form.data_inicio_contrato }}</div>
+      <div class="form-group"><label>{{ form.data_fim_contrato.label }}</label>{{ form.data_fim_contrato }}</div>
+      <div class="form-group"><label>{{ form.numero_processo.label }}</label>{{ form.numero_processo }}</div>
+      <div class="form-group"><label>Status</label>{{ form.ativo }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">8. Serviços Contratados</h2>
+    {{ formset.management_form }}
+    <div id="formset-container">
+      {% for fs_form in formset %}
+      <div class="formset-row">
+        {% if fs_form.instance.pk %}{{ fs_form.DELETE }}{% endif %}
+        <div class="formset-grid">
+          <div class="form-group"><label>{{ fs_form.tipo_servico.label }}</label>{{ fs_form.tipo_servico }}</div>
+          <div class="form-group"><label>{{ fs_form.especialidade.label }}</label>{{ fs_form.especialidade }}</div>
+          <div class="form-group" style="grid-column:span 2"><label>{{ fs_form.descricao.label }}</label>{{ fs_form.descricao }}</div>
+          <div class="form-group"><label>{{ fs_form.unidade_medida.label }}</label>{{ fs_form.unidade_medida }}</div>
+          <div class="form-group"><label>{{ fs_form.quantidade_estimada_mes.label }}</label>{{ fs_form.quantidade_estimada_mes }}</div>
+          <div class="form-group"><label>{{ fs_form.valor_unitario.label }}</label>{{ fs_form.valor_unitario }}</div>
+          <div class="form-group"><label>{{ fs_form.prazo_entrega_laudo_dias.label }}</label>{{ fs_form.prazo_entrega_laudo_dias }}</div>
+          <div class="form-group"><label>{{ fs_form.remoto.label }}</label>{{ fs_form.remoto }}</div>
+          <div class="form-group full"><label>{{ fs_form.observacoes.label }}</label>{{ fs_form.observacoes }}</div>
+          {% for hidden in fs_form.hidden_fields %}{{ hidden }}{% endfor %}
+        </div>
+        {% if fs_form.instance.pk %}
+        <div class="formset-delete">
+          <label style="color:#dc3545;cursor:pointer;font-size:.8rem">
+            {{ fs_form.DELETE }} Remover este serviço
+          </label>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if form.errors or formset.errors %}
+  <div class="card" style="border-color:#e0ced7;margin-bottom:1rem">
+    <h3 style="color:var(--color-error);margin-bottom:.5rem">Corrija os erros abaixo:</h3>
+    {{ form.errors }}
+    {{ formset.errors }}
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:.75rem;margin-top:1rem">
+    <button type="submit" class="btn btn-primary">💾 Salvar Prestador</button>
+    <a href="{% url 'cadastro:prestador_list' %}" class="btn btn-secondary">Cancelar</a>
+  </div>
+</form>
+{% endblock %}
