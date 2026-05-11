@@ -12,6 +12,12 @@ try:
 except ImportError:
     HAS_PDFPLUMBER = False
 
+try:
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    HAS_PYMUPDF = False
+
 
 # ---------------------------------------------------------------------------
 # Utilitários
@@ -66,6 +72,66 @@ def _localizar_anexo1(texto: str) -> str:
     if m:
         return texto[m.start():]
     return texto
+
+
+# ---------------------------------------------------------------------------
+# Extração via PyMuPDF (widgets DocuSign)
+# ---------------------------------------------------------------------------
+
+def _extrair_widgets_docusign(caminho_pdf) -> dict:
+    """
+    Usa PyMuPDF para ler os campos de formulário preenchidos pelo DocuSign.
+    Retorna dicionário com:
+      - 'nome_contratado': nome do signatário CONTRATADO(A)
+      - 'cpf_contratado': CPF do signatário (se disponível)
+
+    O widget do CONTRATADO(A) está posicionado logo abaixo do texto
+    "CONTRATADO (A)" na página 1 do Termo de Adesão.
+    """
+    resultado = {"nome_contratado": "", "cpf_contratado": ""}
+    if not HAS_PYMUPDF:
+        return resultado
+
+    try:
+        doc = fitz.open(str(caminho_pdf))
+        page = doc[0]  # Termo de Adesão está na página 1
+
+        # Posição Y do texto "CONTRATADO (A)" na página
+        y_contratado = None
+        for b in page.get_text("dict")["blocks"]:
+            for line in b.get("lines", []):
+                for span in line.get("spans", []):
+                    if re.search(r"CONTRATADO\s*\(A\)", span["text"], re.IGNORECASE):
+                        y_contratado = span["bbox"][3]  # borda inferior do texto
+                        break
+
+        # Coleta todos os widgets FullName com seus valores e posições
+        fullnames = []
+        for w in page.widgets():
+            if "FullName" in w.field_name and w.field_value:
+                val = w.field_value.strip()
+                # Descarta valores que são UUIDs (campo de sistema)
+                if not re.match(r"^[0-9a-f\-]{30,}$", val, re.IGNORECASE):
+                    fullnames.append((w.rect.y0, val))
+
+        if fullnames:
+            fullnames.sort(key=lambda x: x[0])  # ordena por posição Y
+
+            if y_contratado is not None:
+                # Pega o primeiro FullName abaixo de "CONTRATADO (A)"
+                for y, val in fullnames:
+                    if y >= y_contratado:
+                        resultado["nome_contratado"] = val
+                        break
+            else:
+                # Fallback: primeiro nome que não seja do SECONCI/instituição
+                resultado["nome_contratado"] = fullnames[0][1]
+
+        doc.close()
+    except Exception:
+        pass
+
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +191,7 @@ def _extrair_cnpj(texto: str) -> str:
     que pertence à contratada, não ao SECONCI).
     """
     matches = re.findall(
-        r"CNPJ\s*(?:n[°º\.]+|sob\s+o\s+n[°º\.]+)?\s*[:\s]*([\d]{2}[\.\/ ]?[\d]{3}[\.\/ ]?[\d]{3}[\.\/ ]?[\d]{4}[-\s]?[\d]{2})",
+        r"CNPJ\s*(?:n[°º\.]+|sob\s+o\s+n[°º\.]+)?\s*[:\s]*([\d]{2}[\.\/\ ]?[\d]{3}[\.\/\ ]?[\d]{3}[\.\/\ ]?[\d]{4}[-\s]?[\d]{2})",
         texto, re.IGNORECASE
     )
     if matches:
@@ -148,7 +214,7 @@ def _extrair_inscricao_municipal(texto: str) -> str:
     if m:
         return m.group(1).strip()
     m = re.search(
-        r"Insc(?:ri[çc][ãa]o)?[\.]?\s+Municipal\s+(?:n[°º.]+)?\s*:?\s*([\d\.\-]+)",
+        r"Insc(?:ri[çc][ãa]o)?[\.\ ]?\s+Municipal\s+(?:n[°º.]+)?\s*:?\s*([\d\.\-]+)",
         texto, re.IGNORECASE
     )
     if m:
@@ -175,17 +241,23 @@ def _extrair_endereco(texto: str) -> dict:
         "cidade": "",
     }
 
-    # Captura o trecho entre 'estabelecida na' e 'Estado de' (ou 'Doravante')
+    # Captura o trecho entre 'estabelecida na' e 'no município' (ou fallbacks)
     m = re.search(
         r"estabelecida\s+na\s+(.+?)(?:,\s*no\s+munic[íi]pio|Doravante|DECLARA)",
         texto, re.IGNORECASE | re.DOTALL
     )
     if not m:
+        # Tenta variação sem vírgula antes de "no município"
+        m = re.search(
+            r"estabelecida\s+na\s+(.+?)\s+no\s+munic[íi]pio",
+            texto, re.IGNORECASE | re.DOTALL
+        )
+    if not m:
         return resultado
 
     bloco = _limpar(m.group(1))
 
-    # CEP: '04.141-100' ou '04141-100' ou '04141100'
+    # CEP: '04.141-100' ou '04141-100'
     cep_m = re.search(r"CEP[:\s]+([\d]{2}\.?[\d]{3}[-–][\d]{3})", bloco, re.IGNORECASE)
     if cep_m:
         resultado["cep"] = cep_m.group(1).strip()
@@ -199,7 +271,7 @@ def _extrair_endereco(texto: str) -> dict:
             bloco_sem_cep = bloco
 
     # Cidade: após 'município de'
-    cidade_m = re.search(r"munic[íi]pio\s+de\s+([\w\s]+?)(?:,|$)", texto, re.IGNORECASE)
+    cidade_m = re.search(r"munic[íi]pio\s+de\s+([\w\s]+?)(?:,|$|\n)", texto, re.IGNORECASE)
     if cidade_m:
         resultado["cidade"] = _limpar(cidade_m.group(1))
 
@@ -264,36 +336,35 @@ def _extrair_objeto(texto: str) -> str:
 
 def _extrair_representante_tecnico(texto: str) -> tuple[str, str]:
     """
-    Extrai nome e CPF do responsável técnico (CONTRATADO(A)) a partir do
-    Termo de Adesão ou das Disposições Finais.
+    Extrai nome e CPF do responsável técnico (CONTRATADO(A)).
 
-    O documento SECONCI apresenta o campo assim:
-        CONTRATADO (A)
-        Nome: Fulano de Tal
-        CPF: 000.000.000-00
-
-    OU em linha única:
-        CONTRATADO(A) Nome: Fulano CPF: 000...
-
-    Tentativas em ordem:
-    1. Linha "CONTRATADO (A)" com 'Nome:' e 'CPF:' nas linhas seguintes
-       (captura multi-linha tolerante a espaços/quebras).
-    2. Variação com parênteses: 'Contratado(a)'.
-    3. Fallback: qualquer ocorrência de CPF próxima ao bloco CONTRATADO.
+    Estratégia:
+    1. Widgets DocuSign via PyMuPDF — campo FullName posicionado abaixo de
+       "CONTRATADO (A)" na página 1 (mais confiável, pois pdfplumber não lê
+       os valores dos campos assinados eletronicamente).
+    2. Regex sobre o texto extraído por pdfplumber — fallback para contratos
+       onde o nome está inserido como texto livre no PDF.
+    3. CPF: busca regex após "CONTRATADO" (raramente preenchido via DocuSign).
     """
     nome = ""
     cpf = ""
 
-    # Padrão 1 – multilinhas com espaço: "CONTRATADO (A)" ... "Nome: X" ... "CPF: Y"
+    # --- Estratégia 1: widgets DocuSign (PyMuPDF) ---
+    # Nota: _extrair_widgets_docusign precisa do caminho do arquivo, não do texto.
+    # O nome é passado via resultado em extrair_contrato(); aqui a função
+    # recebe apenas texto → se já houver nome no texto, usa; senão retorna vazio
+    # e extrair_contrato() complementa com os widgets.
+
+    # --- Estratégia 2: regex sobre texto pdfplumber ---
     for pat in [
-        r"CONTRATADO\s*\(A\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\. ]?[\d]{3}[\. ]?[\d]{3}[-\. ]?[\d]{2})",
-        r"Contratado\s*\(a\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\. ]?[\d]{3}[\. ]?[\d]{3}[-\. ]?[\d]{2})",
+        r"CONTRATADO\s*\(A\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\.\ ]?[\d]{3}[\.\ ]?[\d]{3}[-\.\ ]?[\d]{2})",
+        r"Contratado\s*\(a\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\.\ ]?[\d]{3}[\.\ ]?[\d]{3}[-\.\ ]?[\d]{2})",
     ]:
         m = re.search(pat, texto, re.IGNORECASE)
         if m:
             nome_raw = _limpar(m.group(1))
             cpf_raw = re.sub(r"[^\d]", "", m.group(2))
-            # Descarta se o "nome" capturado é na verdade uma linha de CPF vazia ou só espaços
+            # Descarta se capturou número/espaço em branco em vez de nome
             if nome_raw and not re.match(r'^[\d\s\.\-]+$', nome_raw):
                 nome = nome_raw
                 if len(cpf_raw) == 11:
@@ -302,9 +373,9 @@ def _extrair_representante_tecnico(texto: str) -> tuple[str, str]:
                     cpf = m.group(2).strip()
                 return nome, cpf
 
-    # Padrão 2 – busca CPF isolado próximo de qualquer variação de CONTRATADO
+    # --- Estratégia 3: CPF isolado próximo ao bloco CONTRATADO ---
     m = re.search(
-        r"CONTRATADO[\s\S]{0,200}?CPF[:\s]*([\d]{3}[\. ]?[\d]{3}[\. ]?[\d]{3}[-\. ]?[\d]{2})",
+        r"CONTRATADO[\s\S]{0,200}?CPF[:\s]*([\d]{3}[\.\ ]?[\d]{3}[\.\ ]?[\d]{3}[-\.\ ]?[\d]{2})",
         texto, re.IGNORECASE
     )
     if m:
@@ -318,26 +389,105 @@ def _extrair_representante_tecnico(texto: str) -> tuple[str, str]:
 
 
 def _extrair_representante_legal(texto: str) -> tuple[str, str]:
-    """Mantida para compatibilidade – agora delega para _extrair_representante_tecnico."""
+    """Mantida para compatibilidade – delega para _extrair_representante_tecnico."""
     return _extrair_representante_tecnico(texto)
+
+
+def _extrair_servicos_tabela31(texto: str) -> list[dict]:
+    """
+    Extrai a tabela financeira da cláusula 3.1 (Descrição, Média, Valor Unit., Valor Total).
+
+    O pdfplumber fragmenta a tabela em colunas intercaladas. O padrão gerado é:
+        MAPA 120 4.080,00
+        Das Segun 34,00          ← valor unitário aparece no final desta linha
+        Ambulatório 07:00 às da à 5 dias úteis
+        HOLTER 120 4.680,00
+        19:00 hrs sexta 39,00   ← idem
+        Eletrocardiograma 50 4,30 215,00   ← 3 valores na mesma linha
+
+    Estratégia:
+    - Linha com exame conhecido + 1 valor  → nome, média, total (unit vem na linha seguinte)
+    - Linha com exame conhecido + 2 valores → nome, média, unit, total (Eletrocardiograma)
+    """
+    servicos = []
+
+    # Localiza o bloco da tabela (entre "tabela abaixo" e "Valor Estimado Mensal")
+    m_bloco = re.search(
+        r"tabela\s+abaixo[:\s]*(.+?)(?:Valor\s+[Ee]stimado\s+[Mm]ensal|3\.2)",
+        texto, re.IGNORECASE | re.DOTALL
+    )
+    if not m_bloco:
+        return servicos
+
+    bloco = m_bloco.group(1)
+    linhas = bloco.split("\n")
+
+    # Padrão para início de linha de exame: NOME MÉDIA VALOR [VALOR_OPCIONAL]
+    pat_exame = re.compile(
+        r"^(MAPA|HOLTER|Eletrocardiograma|Eletrocardiogram|ECG)\s+"
+        r"(\d+)\s+"
+        r"([\d\.]+,\d{2})"          # 1º valor numérico
+        r"(?:\s+([\d\.]+,\d{2}))?", # 2º valor (opcional)
+        re.IGNORECASE
+    )
+    # Padrão para capturar valor no final de uma linha de texto misto
+    pat_val_final = re.compile(r"([\d\.]+,\d{2})\s*$")
+
+    i = 0
+    while i < len(linhas):
+        linha = linhas[i].strip()
+        m = pat_exame.match(linha)
+        if m:
+            nome = m.group(1).strip().title()
+            # Normaliza capitalização conhecida
+            nome = re.sub(r"^Eletrocardiogram[a]?$", "Eletrocardiograma", nome, flags=re.IGNORECASE)
+            media = m.group(2)
+            val1 = m.group(3)
+            val2 = m.group(4)  # None para MAPA/HOLTER
+
+            prazo = "5 dias úteis"
+            # Busca prazo nas próximas linhas
+            for j in range(i + 1, min(i + 5, len(linhas))):
+                pm = re.search(r"(\d+\s*dias?\s*[úu]teis?)", linhas[j], re.IGNORECASE)
+                if pm:
+                    prazo = _limpar(pm.group(1))
+                    break
+
+            if val2:
+                # 3 valores na linha: NOME MEDIA UNIT TOTAL (ex.: Eletrocardiograma)
+                unit = val1
+                total = val2
+            else:
+                # 2 valores na linha: NOME MEDIA TOTAL
+                # Valor unitário está no final da linha seguinte (texto misto)
+                total = val1
+                unit = ""
+                if i + 1 < len(linhas):
+                    mu = pat_val_final.search(linhas[i + 1].strip())
+                    if mu:
+                        unit = mu.group(1)
+
+            servicos.append({
+                "descricao": nome,
+                "unidade": nome,
+                "quantidade": int(media),
+                "media_mensal": media,
+                "valor_unitario": float(unit.replace(".", "").replace(",", ".")) if unit else 0.0,
+                "valor_total": float(total.replace(".", "").replace(",", ".")),
+                "prazo_laudo": prazo,
+            })
+        i += 1
+
+    return servicos
 
 
 def _extrair_servicos_anexo1(texto: str) -> list[dict]:
     """
     Extrai os serviços contratados do quadro presente no Anexo 1 (item 1.2 ou 1.3).
-
-    Formato da tabela neste contrato (pdfplumber extrai como texto corrido):
-        EXAME Setor de Trabalho Horário Dias da Semana Média de exames e laudos / mês
-        Prazo de entrega do laudo Equipamentos
-        MAPA Ambulatório Das 07:00 às 19:00 hrs Segunda à sexta 120 5 dias úteis Contratada
-        HOLTER Ambulatório ... 120 5 dias úteis Contratada
-        Eletrocardiograma Ambulatório ... De acordo com demanda ... 5 dias úteis Contratante
-
     Retorna lista de dicts com: exame, media_mensal, prazo_entrega.
     """
     servicos = []
 
-    # Localiza o bloco do item 1.2 ou 1.3 até o próximo item numerado
     bloco = ""
     m = re.search(
         r"1\.[23]\s+Os\s+servi[çc]os\s+ser[ãa]o.+?(?=\n\s*1\.[4-9]|\n\s*2\.)",
@@ -346,12 +496,8 @@ def _extrair_servicos_anexo1(texto: str) -> list[dict]:
     if m:
         bloco = m.group(0)
     else:
-        # fallback: captura linhas com MAPA/HOLTER/Eletrocardiograma
         bloco = texto
 
-    # Padrão de cada linha de exame:
-    # NOME_EXAME ... <número ou texto de qtd> ... <prazo: N dias úteis>
-    # Tenta capturar: nome | media | prazo
     padrao = re.compile(
         r"(MAPA|HOLTER|Eletrocardiograma)"
         r"[\s\S]{0,150}?"
@@ -366,11 +512,9 @@ def _extrair_servicos_anexo1(texto: str) -> list[dict]:
         media_raw = _limpar(m.group(2))
         prazo = _limpar(m.group(3))
 
-        # Normaliza a média: se for texto 'De acordo...', extrai a quantidade entre parênteses
         if re.match(r'^\d+$', media_raw):
             media = media_raw
         else:
-            # Pode ter qtd entre parênteses: 'qtd. média de exames) 5'
             qtd_m = re.search(r'\(qtd\.?\s*m[ée]dia\s+de\s+exames\)', media_raw, re.IGNORECASE)
             media = "De acordo com demanda" if qtd_m else _limpar(media_raw)
 
@@ -385,53 +529,15 @@ def _extrair_servicos_anexo1(texto: str) -> list[dict]:
 
 def _extrair_servicos(texto: str) -> list[dict]:
     """
-    Extrai serviços com valores financeiros da cláusula 3.1.
-    Mantido para compatibilidade com a tabela de preços (campo 'servicos' legado).
+    Mantido para compatibilidade. Agora delega para _extrair_servicos_tabela31,
+    que lida corretamente com o layout fragmentado do pdfplumber.
     """
-    servicos = []
-    m = re.search(r"3\.1.+?Valor\s+estimado\s+mensal", texto, re.DOTALL | re.IGNORECASE)
-    bloco = m.group(0) if m else texto
-
-    padrao_linha = re.compile(
-        r"(\d+)\s+(Consulta|Laudo|Exame|MAPA|HOLTER|Eletrocardiograma|Cirurgia[\w\s]*)"
-        r"\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})",
-        re.IGNORECASE
-    )
-    for m in padrao_linha.finditer(bloco):
-        qtde = int(m.group(1))
-        descricao = m.group(2).strip()
-        v_unit = float(m.group(3).replace(".", "").replace(",", "."))
-        v_total = float(m.group(4).replace(".", "").replace(",", "."))
-        servicos.append({
-            "descricao": descricao,
-            "unidade": descricao,
-            "quantidade": qtde,
-            "valor_unitario": v_unit,
-            "valor_total": v_total,
-        })
-
-    if not servicos:
-        padrao_valor = re.compile(
-            r"([A-Za-záàãâéêíóôõúç][\w\s]{2,40})\s+(\d+)\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})",
-            re.IGNORECASE
-        )
-        for m in padrao_valor.finditer(bloco):
-            v_unit = float(m.group(3).replace(".", "").replace(",", "."))
-            v_total = float(m.group(4).replace(".", "").replace(",", "."))
-            servicos.append({
-                "descricao": m.group(1).strip(),
-                "unidade": m.group(1).strip(),
-                "quantidade": int(m.group(2)),
-                "valor_unitario": v_unit,
-                "valor_total": v_total,
-            })
-
-    return servicos
+    return _extrair_servicos_tabela31(texto)
 
 
 def _extrair_valor_mensal(texto: str) -> float:
     m = re.search(
-        r"valor\s+estimado\s+mensal\s+(?:de\s+)?R\$\s*([\d\.]+,[\d]{2})",
+        r"valor\s+(?:estimado\s+)?mensal\s+(?:estimado\s+)?(?:de\s+)?R\$\s*([\d\.]+,[\d]{2})",
         texto, re.IGNORECASE
     )
     if m:
@@ -465,7 +571,7 @@ def _extrair_vigencia(texto: str) -> tuple[date | None, date | None, int]:
         meses = int(m.group(1))
 
     m = re.search(
-        r"a\s+partir\s+de\s+(.{5,30}?)(?:,|\.|\n|correspondente)",
+        r"a\s+partir\s+de\s+(.{5,30}?)(?:,|\.|\\n|correspondente)",
         texto, re.IGNORECASE
     )
     if m:
@@ -518,8 +624,8 @@ def extrair_contrato(caminho_pdf) -> dict:
         "cep": "",
         "cidade": "",
         "objeto": "",
-        "servicos": [],             # tabela preços (cláusula 3.1)
-        "servicos_contratados": [], # tabela do Anexo 1 (exame, média, prazo)
+        "servicos": [],              # tabela financeira 3.1 (compatibilidade)
+        "servicos_contratados": [],  # tabela do Anexo 1 (exame, média, prazo)
         "especialidade": "",
         "data_assinatura": None,
         "data_fim": None,
@@ -539,17 +645,14 @@ def extrair_contrato(caminho_pdf) -> dict:
         return resultado
 
     try:
-        # Localiza o Anexo 1 para extrações principais
         texto_anexo1 = _localizar_anexo1(texto)
 
         resultado["numero_processo"] = _extrair_numero_processo(texto)
-
-        # Razão social e CNPJ: usa texto completo (aparecem no Termo de Adesão)
         resultado["razao_social"] = _extrair_razao_social(texto)
         resultado["cnpj"] = _extrair_cnpj(texto)
         resultado["inscricao_municipal"] = _extrair_inscricao_municipal(texto)
 
-        # Endereço: extraído do Termo de Adesão
+        # Endereço: extraído do Termo de Adesão (texto completo)
         end = _extrair_endereco(texto)
         resultado["logradouro"] = end["logradouro"]
         resultado["numero"] = end["numero"]
@@ -558,16 +661,27 @@ def extrair_contrato(caminho_pdf) -> dict:
         resultado["cep"] = end["cep"]
         resultado["cidade"] = end["cidade"]
 
-        # Objeto e serviços: usa o Anexo 1
         resultado["objeto"] = _extrair_objeto(texto_anexo1)
-        resultado["servicos_contratados"] = _extrair_servicos_anexo1(texto_anexo1)
-        resultado["servicos"] = _extrair_servicos(texto)
         resultado["especialidade"] = _extrair_especialidade(texto)
         resultado["valor_mensal"] = _extrair_valor_mensal(texto)
         resultado["valor_global"] = _extrair_valor_global(texto)
 
+        # Tabela financeira 3.1 – MAPA, HOLTER, Eletrocardiograma com valores
+        resultado["servicos"] = _extrair_servicos_tabela31(texto)
+
+        # Tabela do Anexo 1 – exame, média, prazo (sem valores financeiros)
+        resultado["servicos_contratados"] = _extrair_servicos_anexo1(texto_anexo1)
+
         # Representante técnico
-        nome_rep, cpf_rep = _extrair_representante_tecnico(texto)
+        # Prioridade 1: widgets DocuSign (PyMuPDF) – campo preenchido eletronicamente
+        widgets = _extrair_widgets_docusign(caminho_pdf)
+        nome_rep = widgets.get("nome_contratado", "")
+        cpf_rep = widgets.get("cpf_contratado", "")
+
+        # Prioridade 2: fallback por regex sobre texto pdfplumber
+        if not nome_rep:
+            nome_rep, cpf_rep = _extrair_representante_tecnico(texto)
+
         resultado["nome_representante"] = nome_rep
         resultado["cpf_representante"] = cpf_rep
 
