@@ -13,6 +13,7 @@ urlpatterns = [
 
     # ── Módulo: Relatório ─────────────────────────────────────────────────────
     path("relatorio/", views_home.relatorio, name="relatorio"),
+    path("relatorio/<int:pk>/download/", views_home.relatorio_download, name="relatorio_download"),
 
     # ── Módulo: Indicadores ───────────────────────────────────────────────────
     path("indicadores/", views_home.indicadores, name="indicadores"),
