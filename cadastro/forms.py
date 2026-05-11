@@ -1,6 +1,6 @@
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Prestador, ServicoContratado, Especialidade
+from .models import Prestador, ServicoContratado, Especialidade, ContratoUpload
 
 
 class PrestadorForm(forms.ModelForm):
@@ -63,3 +63,19 @@ ServicoFormSet = inlineformset_factory(
         "observacoes": forms.Textarea(attrs={"class": "form-control", "rows": 2}),
     },
 )
+
+
+class UploadContratoForm(forms.ModelForm):
+    class Meta:
+        model = ContratoUpload
+        fields = ["arquivo"]
+        widgets = {
+            "arquivo": forms.FileInput(attrs={
+                "accept": ".pdf",
+                "class": "form-control",
+                "id": "arquivo-pdf",
+            })
+        }
+        labels = {
+            "arquivo": "Arquivo PDF do Contrato"
+        }
