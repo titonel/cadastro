@@ -1,9 +1,13 @@
 """
 extrator.py – Extrai dados estruturados de contratos PDF do padrão SECONCI/AME.
 
-Versão 2 – suporta dois formatos:
-  - Formato A (MAPA/HOLTER/ECG): tabela 3.1 com colunas Descrição | Média | Prazo | Valor Unit. | Valor Total
-  - Formato B (consultórios): tabela 3.1 com colunas Especialidade | Serviço | Setor | ... | Qtde. | Unid.Med. | Valor Unit. | Valor Total
+Versão 3 – correções:
+  - Endereço: separa corretamente logradouro, número e bairro quando o padrão
+    é "LOGRADOURO, NÚMERO, BAIRRO, CEP: XXXXX" (vírgulas como separador).
+  - Representante: rejeita resultado do DocuSign quando contém apenas uma palavra
+    (ex: "Tatiana" em vez de "Tatiana Rozov") e usa o fallback regex do pdfplumber.
+  - Tabela Anexo 1 Formato B: estratégia reescrita para capturar linhas da tabela
+    1.3 mesmo quando o pdfplumber as fragmenta em múltiplas linhas.
 """
 
 import re
@@ -120,6 +124,8 @@ def _extrair_widgets_docusign(caminho_pdf) -> dict:
 
         # -----------------------------------------------------------------
         # Estratégia 1: widgets FullName na página 1 (Termo de Adesão)
+        # Rejeita nomes com apenas UMA palavra (ex: "Tatiana" em vez de
+        # "Tatiana Rozov") — são assinaturas desenhadas/abreviadas do DocuSign.
         # -----------------------------------------------------------------
         page0 = doc[0]
         y_contratado = None
@@ -142,16 +148,18 @@ def _extrair_widgets_docusign(caminho_pdf) -> dict:
             if y_contratado is not None:
                 for y, val in fullnames:
                     if y >= y_contratado:
-                        resultado["nome_contratado"] = _title_case_nome(val)
+                        # Só aceita se tiver pelo menos 2 palavras (nome completo)
+                        if len(val.split()) >= 2:
+                            resultado["nome_contratado"] = _title_case_nome(val)
                         break
             else:
-                resultado["nome_contratado"] = _title_case_nome(fullnames[0][1])
+                val = fullnames[0][1]
+                if len(val.split()) >= 2:
+                    resultado["nome_contratado"] = _title_case_nome(val)
 
         # -----------------------------------------------------------------
         # Estratégia 2: varrer TODAS as páginas buscando bloco de assinatura
         # com 'CONTRATADO (A)' / 'Testemunha Contratado'
-        # Funciona nos contratos onde o nome está inserido como texto livre
-        # pelo DocuSign (campo "Assinado por" ou texto digitado).
         # -----------------------------------------------------------------
         texto_completo_doc = []
         for pg in doc:
@@ -160,9 +168,8 @@ def _extrair_widgets_docusign(caminho_pdf) -> dict:
                 texto_completo_doc.append(t)
         texto_todas = "\n".join(texto_completo_doc)
 
-        # Nome e CPF do CONTRATADO(A) a partir do bloco de assinatura
+        # Nome e CPF do CONTRATADO(A) a partir do bloco de assinatura textual
         if not resultado["nome_contratado"]:
-            # Padrão: "CONTRATADO (A)\nNome:Tatiana Rozov\nCPF: 039..."
             m_cont = re.search(
                 r"CONTRATADO\s*\(A\)[\s\S]{0,80}?"
                 r"Nome\s*:\s*([^\n\r]+?)[\s\S]{0,40}?"
@@ -190,10 +197,7 @@ def _extrair_widgets_docusign(caminho_pdf) -> dict:
 
         # -----------------------------------------------------------------
         # Estratégia 3: testemunha do contratado
-        # Padrão: "Testemunha\nContratado (A)\n...\nNome:\nCPF:"
-        # ou        "Testemunha Contratado (A)  ____\nNome:...\nCPF:..."
         # -----------------------------------------------------------------
-        # Tentativa via widgets (campo FullName posicionado abaixo de "Testemunha Contratado")
         for pg in doc:
             y_test = None
             for b in pg.get_text("dict")["blocks"]:
@@ -295,7 +299,7 @@ def _extrair_razao_social(texto: str) -> str:
 
 def _extrair_cnpj(texto: str) -> str:
     matches = re.findall(
-        r"CNPJ\s*(?:n[°º\.]+|sob\s+o\s+n[°º\.]+)?\s*[:\s]*([\d]{2}[\.\/ ]?[\d]{3}[\.\/ ]?[\d]{3}[\.\/ ]?[\d]{4}[-\s]?[\d]{2})",
+        r"CNPJ\s*(?:n[°º\.]+|sob\s+o\s+n[°º\.]+)?\s*[:\s]*([\d]{2}[\.\/\s]?[\d]{3}[\.\/\s]?[\d]{3}[\.\/\s]?[\d]{4}[-\s]?[\d]{2})",
         texto, re.IGNORECASE
     )
     if matches:
@@ -314,7 +318,7 @@ def _extrair_inscricao_municipal(texto: str) -> str:
     if m:
         return m.group(1).strip()
     m = re.search(
-        r"Insc(?:ri[\u00e7c][\u00e3a]o)?[\.\s]?\s+Municipal\s+(?:n[\u00b0\u00ba.]+)?\s*:?\s*([\d\.\-]+)",
+        r"Inscri[\u00e7c][\u00e3a]o\s+Municipal\s+(?:n[°º.]+\s*)?:?\s*([\d\.\-]+)",
         texto, re.IGNORECASE
     )
     if m:
@@ -323,6 +327,16 @@ def _extrair_inscricao_municipal(texto: str) -> str:
 
 
 def _extrair_endereco(texto: str) -> dict:
+    """
+    Extrai endereço a partir de padrões como:
+      "com sede na LOGRADOURO, NUMERO, BAIRRO, CEP: XXXXX"
+      "estabelecida na LOGRADOURO, NUMERO - COMPLEMENTO, CEP XXXXX"
+
+    Separação:
+      - O campo imediatamente após a vírgula do logradouro que começa com dígito
+        é o NÚMERO.
+      - O campo seguinte (antes do CEP) é o BAIRRO (podendo conter " - complemento").
+    """
     resultado = {
         "logradouro": "",
         "numero": "",
@@ -332,7 +346,7 @@ def _extrair_endereco(texto: str) -> dict:
         "cidade": "",
     }
 
-    # Variações: "estabelecida na", "sede na", "com sede na"
+    bloco = ""
     for prefixo in [
         r"estabelecida\s+na\s+",
         r"com\s+sede\s+na\s+",
@@ -343,48 +357,74 @@ def _extrair_endereco(texto: str) -> dict:
             texto, re.IGNORECASE | re.DOTALL
         )
         if m:
+            bloco = _limpar(m.group(1))
             break
-    if not m:
+
+    if not bloco:
         return resultado
 
-    bloco = _limpar(m.group(1))
-
-    # CEP
-    cep_m = re.search(r"CEP[:\s]+([\d]{2}\.?[\d]{3}[-\u2013][\d]{3})", bloco, re.IGNORECASE)
+    # ── Extrai CEP e remove do bloco ──────────────────────────────────────
+    cep_m = re.search(r"CEP[:\s]+([\d]{2}\.?[\d]{3}[-–][\d]{3})", bloco, re.IGNORECASE)
+    if not cep_m:
+        cep_m = re.search(r"([\d]{5}[-–][\d]{3})", bloco)
     if cep_m:
         resultado["cep"] = cep_m.group(1).strip()
-        bloco_sem_cep = bloco[:cep_m.start()].strip().rstrip(",")
-    else:
-        cep_m = re.search(r"([\d]{5}[-\u2013][\d]{3})", bloco)
-        if cep_m:
-            resultado["cep"] = cep_m.group(1)
-            bloco_sem_cep = bloco[:cep_m.start()].strip().rstrip(",")
-        else:
-            bloco_sem_cep = bloco
+        bloco = bloco[:cep_m.start()].strip().rstrip(",").strip()
 
-    # Cidade
+    # ── Extrai cidade ──────────────────────────────────────────────────────
     cidade_m = re.search(r"munic[íi]pio\s+de\s+([\w\s]+?)(?:,|$|\n)", texto, re.IGNORECASE)
     if cidade_m:
         resultado["cidade"] = _limpar(cidade_m.group(1))
 
-    # Decompõe logradouro, numero, complemento, bairro
-    m2 = re.match(
-        r"^([^,]+),\s*(\d+[\w\s]*)(?:\s*[-\u2013]\s*(.+))?$",
-        bloco_sem_cep
-    )
-    if m2:
-        resultado["logradouro"] = _limpar(m2.group(1))
-        num_comp = _limpar(m2.group(2))
-        bairro_raw = _limpar(m2.group(3)) if m2.group(3) else ""
-        num_m = re.match(r"^(\d+)\s*(.*)", num_comp)
-        if num_m:
-            resultado["numero"] = num_m.group(1)
-            resultado["complemento"] = _limpar(num_m.group(2))
+    # ── Decompõe: LOGRADOURO, NUMERO, BAIRRO [- COMPLEMENTO] ──────────────
+    # Divide por vírgula
+    partes = [p.strip() for p in bloco.split(",")]
+
+    if len(partes) >= 3:
+        # Padrão "LOGRADOURO, NUMERO, BAIRRO" (3 ou mais segmentos)
+        resultado["logradouro"] = partes[0]
+
+        # Segundo segmento deve iniciar com dígito (número)
+        if re.match(r"^\d+", partes[1]):
+            resultado["numero"] = partes[1]
         else:
-            resultado["numero"] = num_comp
-        resultado["bairro"] = bairro_raw
+            # Número pode estar embutido no final do logradouro (ex: "RUA X 123")
+            num_emb = re.search(r"\b(\d+)\s*$", partes[0])
+            if num_emb:
+                resultado["logradouro"] = partes[0][:num_emb.start()].strip()
+                resultado["numero"] = num_emb.group(1)
+            else:
+                resultado["numero"] = partes[1]
+
+        # Restante (parte[2] em diante) é bairro + possível complemento
+        bairro_raw = ", ".join(partes[2:]).strip()
+        # Separa complemento se houver " - "
+        if " - " in bairro_raw:
+            bairro_split = bairro_raw.split(" - ", 1)
+            resultado["bairro"] = bairro_split[0].strip()
+            resultado["complemento"] = bairro_split[1].strip()
+        else:
+            resultado["bairro"] = bairro_raw
+
+    elif len(partes) == 2:
+        resultado["logradouro"] = partes[0]
+        # Tenta separar número do bairro dentro da segunda parte
+        m2 = re.match(r"^(\d+)\s*(.*)", partes[1])
+        if m2:
+            resultado["numero"] = m2.group(1)
+            resultado["bairro"] = m2.group(2).strip()
+        else:
+            resultado["logradouro"] = partes[1]
+
     else:
-        resultado["logradouro"] = bloco_sem_cep
+        # Apenas uma parte: tenta extrair número via regex
+        m3 = re.match(r"^(.+?),?\s*(\d+)\s*(.*)", bloco)
+        if m3:
+            resultado["logradouro"] = m3.group(1).strip()
+            resultado["numero"] = m3.group(2)
+            resultado["bairro"] = m3.group(3).strip()
+        else:
+            resultado["logradouro"] = bloco
 
     return resultado
 
@@ -420,11 +460,17 @@ def _extrair_objeto(texto: str) -> str:
 def _extrair_representante_tecnico(texto: str) -> tuple[str, str]:
     """
     Extrai nome e CPF do CONTRATADO(A) por regex no texto pdfplumber.
-    Usado como fallback quando PyMuPDF não consegue.
+    Usado como fallback quando PyMuPDF não consegue (ou retorna nome incompleto).
+
+    Padrão esperado no PDF:
+        CONTRATADO (A)
+        Nome: Tatiana Rozov
+        CPF: 03954978849
     """
+    # Padrão principal: "CONTRATADO (A) ... Nome: NOME ... CPF: NUMERO"
     for pat in [
-        r"CONTRATADO\s*\(A\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\.\s]?[\d]{3}[\.\s]?[\d]{3}[-\.\s]?[\d]{2})",
-        r"Contratado\s*\(a\)[\s\S]{0,60}?Nome[:\s]+([^\n\r]{3,80}?)[\s\S]{0,60}?CPF[:\s]+([\d]{3}[\.\s]?[\d]{3}[\.\s]?[\d]{3}[-\.\s]?[\d]{2})",
+        r"CONTRATADO\s*\(A\)[\s\S]{0,80}?Nome\s*:\s*([^\n\r]{3,80}?)[\s\S]{0,60}?CPF\s*:\s*([\d]{3}[\.\s]?[\d]{3}[\.\s]?[\d]{3}[-\.\s]?[\d]{2})",
+        r"Contratado\s*\(a\)[\s\S]{0,80}?Nome\s*:\s*([^\n\r]{3,80}?)[\s\S]{0,60}?CPF\s*:\s*([\d]{3}[\.\s]?[\d]{3}[\.\s]?[\d]{3}[-\.\s]?[\d]{2})",
     ]:
         m = re.search(pat, texto, re.IGNORECASE)
         if m:
@@ -435,6 +481,7 @@ def _extrair_representante_tecnico(texto: str) -> tuple[str, str]:
                 cpf = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:]}" if len(cpf_raw) == 11 else m.group(2).strip()
                 return nome, cpf
 
+    # Fallback: só CPF
     m = re.search(
         r"CONTRATADO[\s\S]{0,200}?CPF[:\s]*([\d]{3}[\.\s]?[\d]{3}[\.\s]?[\d]{3}[-\.\s]?[\d]{2})",
         texto, re.IGNORECASE
@@ -496,7 +543,7 @@ def _extrair_servicos_formato_a(bloco: str) -> list[dict]:
             val1 = m.group(3)
             val2 = m.group(4)
 
-            prazo = "5 dias \u00fateis"
+            prazo = "5 dias úteis"
             for j in range(i + 1, min(i + 5, len(linhas))):
                 pm = re.search(r"(\d+\s*dias?\s*[\u00fau]teis?)", linhas[j], re.IGNORECASE)
                 if pm:
@@ -531,19 +578,12 @@ def _extrair_servicos_formato_a(bloco: str) -> list[dict]:
 def _extrair_servicos_formato_b(bloco: str) -> list[dict]:
     """
     Formato B: tabela genérica com colunas
-    Especialidade | Serviço | Setor de Trabalho | Dias | Horários | N\u00ba Prof. | Qtde. | Unid.Med. | Valor Unit. | Valor Total
-
-    O pdfplumber fragmenta essa tabela em múltiplas linhas. A estratégia:
-    - Linha que contém APENAS número + Unidade + dois valores monetários
-      é uma linha de serviço (Qtde. Unid.Med. Valor Unit. Valor Total).
-    - Busca o nome do serviço nas linhas anteriores próximas.
+    Especialidade | Serviço | Setor | Dias | Horários | Nº Prof. | Qtde. | Unid.Med. | Valor Unit. | Valor Total
     """
     servicos = []
     linhas = [l.strip() for l in bloco.split("\n") if l.strip()]
 
     # Padrão: linha contendo Qtde Unidade ValorUnit ValorTotal
-    # Ex: "48 Consulta 62,40 2.995,20"
-    # Ex: "200 Laudo 29,12 5.824,00"
     pat_linha_valor = re.compile(
         r"^(\d+)\s+"
         r"([A-Za-z\u00c0-\u00ff][\w\s\u00c0-\u00ff]{0,30})\s+"
@@ -551,7 +591,6 @@ def _extrair_servicos_formato_b(bloco: str) -> list[dict]:
         r"([\d\.]+,\d{2})$"
     )
 
-    # Nomes de serviços conhecidos para busca retroativa
     pat_nome_servico = re.compile(
         r"(Consultas?\s+Ambulatoriais?|Prova\s+de\s+fun[\u00e7c][\u00e3a]o\s+pulmonar|SADT|Laudos?|Procedimentos?|[A-Z][\w\s]{3,40})",
         re.IGNORECASE
@@ -565,18 +604,15 @@ def _extrair_servicos_formato_b(bloco: str) -> list[dict]:
             unit_str = m.group(3)
             total_str = m.group(4)
 
-            # Busca o nome do serviço retroativamente (até 5 linhas antes)
             nome_servico = ""
             for k in range(max(0, i - 5), i):
                 mn = pat_nome_servico.search(linhas[k])
                 if mn:
                     cand = _limpar(mn.group(1))
-                    # Descarta linhas que são cabeçalhos de coluna ou nomes de especialidade
                     if cand.lower() not in {"especialidade", "serviço", "setor", "qtde", "unid", "valor"}:
                         if len(cand) > 4:
                             nome_servico = cand
 
-            # Tipo de serviço inferido pela unidade
             tipo = "consulta" if re.search(r"consult", unid, re.IGNORECASE) else "exame"
 
             servicos.append({
@@ -598,13 +634,11 @@ def _extrair_servicos_tabela31(texto: str) -> list[dict]:
     Ponto de entrada unificado: localiza o bloco da tabela 3.1,
     detecta o formato e delega para o extrator correto.
     """
-    # Localiza o bloco entre "tabela abaixo" e "Valor Estimado Mensal" / "3.2"
     m_bloco = re.search(
         r"tabela\s+abaixo[:\s]*(.+?)(?:Valor\s+[Ee]stimado\s+[Mm]ensal|3\.2)",
         texto, re.IGNORECASE | re.DOTALL
     )
     if not m_bloco:
-        # Fallback: bloco da cláusula 3.1
         m_bloco = re.search(
             r"3\.1[\s\S]{0,100}?pagará[\s\S]{0,50}?tabela[\s\S]{0,20}?"
             r"(.+?)(?:Valor\s+[Ee]stimado|3\.2)",
@@ -625,24 +659,33 @@ def _extrair_servicos_tabela31(texto: str) -> list[dict]:
 def _extrair_servicos_anexo1(texto: str) -> list[dict]:
     """
     Extrai os serviços do quadro do Anexo 1 (item 1.2 ou 1.3).
-    Para o Formato B retorna lista de dicts com: exame, media_mensal, prazo_entrega.
+
+    Formato A (MAPA/HOLTER/ECG): extrai exame, media_mensal, prazo_entrega.
+    Formato B (consultas/laudos): varre o bloco da seção 1.3 e captura
+        linhas com padrão 'Serviço | ... | Qtde | Unidade' geradas pelo pdfplumber,
+        incluindo o padrão de tabela fragmentada em múltiplas linhas.
     """
     servicos = []
 
+    # Localiza o bloco da seção 1.3 (ou 1.2)
     bloco = ""
-    m = re.search(
-        r"1\.[23]\s+Os\s+servi[\u00e7c]os.+?(?=\n\s*1\.[4-9]|\n\s*2\.)",
-        texto, re.DOTALL | re.IGNORECASE
-    )
-    if m:
-        bloco = m.group(0)
-    else:
+    for pat_secao in [
+        r"1\.3[\s\S]{0,30}?Os\s+servi[\u00e7c]os.+?(?=\n\s*1\.[4-9]|\n\s*2\.|\n\s*V\.)",
+        r"1\.2[\s\S]{0,30}?Os\s+servi[\u00e7c]os.+?(?=\n\s*1\.[3-9]|\n\s*2\.|\n\s*V\.)",
+        r"1\.[23][\s\S]{0,30}Os\s+servi[\u00e7c]os.+?(?=\n\s*1\.[4-9]|\n\s*2\.|\n\s*V\.)",
+    ]:
+        m = re.search(pat_secao, texto, re.DOTALL | re.IGNORECASE)
+        if m:
+            bloco = m.group(0)
+            break
+
+    if not bloco:
         bloco = texto
 
     formato = _detectar_formato_tabela(bloco)
 
+    # ── Formato A: MAPA / HOLTER / ECG ────────────────────────────────────
     if formato == "A":
-        # Padrão original: exame + média + prazo
         padrao = re.compile(
             r"(MAPA|HOLTER|Eletrocardiograma)"
             r"[\s\S]{0,150}?"
@@ -657,36 +700,99 @@ def _extrair_servicos_anexo1(texto: str) -> list[dict]:
             prazo = _limpar(m.group(3))
             media = media_raw if re.match(r'^\d+$', media_raw) else "De acordo com demanda"
             servicos.append({"exame": exame, "media_mensal": media, "prazo_entrega": prazo})
-    else:
-        # Formato B: busca linhas Qtde Unidade na tabela 1.3
-        linhas = [l.strip() for l in bloco.split("\n") if l.strip()]
-        pat_linha = re.compile(r"^(\d+)\s+([A-Za-z\u00c0-\u00ff][\w\s]{0,25})$")
-        pat_nome_servico = re.compile(
-            r"(Consultas?\s+Ambulatoriais?|Prova\s+de\s+fun[\u00e7c][\u00e3a]o\s+pulmonar|SADT[^\n]{0,40})",
-            re.IGNORECASE
-        )
-        # Busca prazo no bloco
-        prazo_m = re.search(r"(\d+\s*\([\w\s]+\)\s*dias?\s*[\u00fau]teis?|\d+\s+dias?\s+[\u00fau]teis?)", bloco, re.IGNORECASE)
-        prazo_global = _limpar(prazo_m.group(1)) if prazo_m else ""
+        return servicos
 
-        for i, linha in enumerate(linhas):
-            m_l = pat_linha.match(linha)
-            if m_l:
-                qtde = m_l.group(1)
-                unid = _limpar(m_l.group(2))
-                nome_servico = ""
-                for k in range(max(0, i - 5), i):
-                    mn = pat_nome_servico.search(linhas[k])
-                    if mn:
-                        cand = _limpar(mn.group(1))
+    # ── Formato B: consultas / laudos (tabela 1.3 fragmentada) ────────────
+    #
+    # O pdfplumber pode gerar o conteúdo da tabela como:
+    #   a) uma linha por célula ("Consultas Ambulatoriais", "48", "Consulta")
+    #   b) múltiplas células na mesma linha ("Pneumologia Pediátrica | Consultas | ... | 48 | Consulta")
+    #   c) linha com apenas Qtde + Unidade ("48 Consulta")
+    #
+    # Estratégia: busca padrões de quantidade + unidade e retroativamente
+    # recupera o nome do serviço nas linhas vizinhas.
+
+    linhas = [l.strip() for l in bloco.split("\n") if l.strip()]
+
+    # Nomes de serviços conhecidos
+    pat_nome = re.compile(
+        r"(Consultas?\s+Ambulatoriais?|Prova\s+de\s+fun[\u00e7c][\u00e3a]o\s+pulmonar"
+        r"|SADT[^\n]{0,40}|Laudos?\s+[\w\s]{0,30}|Procedimentos?[\s\w]{0,30})",
+        re.IGNORECASE
+    )
+
+    # Padrão de linha "QTDE UNIDADE" (sem valores monetários – esses ficam na seção 3.1)
+    pat_qtde_unid = re.compile(
+        r"^(\d{1,4})\s+"
+        r"(Consulta|Laudo|Atendimento|Procedimento|[\w]+)"
+        r"\s*$",
+        re.IGNORECASE
+    )
+
+    # Padrão alternativo: linha que termina com "| QTDE | UNIDADE"
+    # Ex: "Pneumologia Pediátrica | Consultas | Ambulatório | ... | 48 | Consulta"
+    pat_linha_tabela = re.compile(
+        r"(\d{1,4})\s+(Consulta|Laudo|Atendimento|Procedimento|[\w]+)\s*$",
+        re.IGNORECASE
+    )
+
+    # Prazo (busca no bloco inteiro da seção)
+    prazo_m = re.search(
+        r"(\d+\s*\([\w\s]+\)\s*dias?\s*[\u00fau]teis?|\d+\s+dias?\s+[\u00fau]teis?)",
+        bloco, re.IGNORECASE
+    )
+    prazo_global = _limpar(prazo_m.group(1)) if prazo_m else ""
+
+    # Varredura das linhas
+    vistos = set()
+    for i, linha in enumerate(linhas):
+        # Tenta o padrão estrito (só qtde + unidade)
+        m_q = pat_qtde_unid.match(linha)
+        if not m_q:
+            # Tenta o padrão "qualquer linha que termine com qtde + unidade"
+            m_q = pat_linha_tabela.search(linha)
+
+        if m_q:
+            qtde = m_q.group(1)
+            unid = _limpar(m_q.group(2))
+
+            # Evita duplicatas
+            chave = f"{qtde}_{unid}"
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+
+            # Busca nome do serviço nas 8 linhas anteriores
+            nome_servico = ""
+            for k in range(max(0, i - 8), i + 1):
+                mn = pat_nome.search(linhas[k])
+                if mn:
+                    cand = _limpar(mn.group(1))
+                    if cand.lower() not in {"especialidade", "serviço", "setor", "qtde", "unid", "valor"}:
                         if len(cand) > 4:
                             nome_servico = cand
-                if nome_servico or unid.lower() not in {"especialidade", "serviço", "setor"}:
-                    servicos.append({
-                        "exame": nome_servico or f"{unid}",
-                        "media_mensal": qtde,
-                        "prazo_entrega": prazo_global,
-                    })
+
+            if nome_servico or unid.lower() not in {"especialidade", "serviço", "setor"}:
+                servicos.append({
+                    "exame": nome_servico or unid,
+                    "media_mensal": qtde,
+                    "prazo_entrega": prazo_global,
+                })
+
+    # Fallback: se não encontrou nada via varredura de linhas,
+    # tenta extrair diretamente das linhas que mencionam nome de serviço + número
+    if not servicos:
+        for m_fn in re.finditer(
+            r"(Consultas?\s+Ambulatoriais?|Prova\s+de\s+fun[\u00e7c][\u00e3a]o\s+pulmonar)"
+            r"[\s\S]{0,200}?"
+            r"(\d{1,4})\s+(Consulta|Laudo)",
+            bloco, re.IGNORECASE
+        ):
+            servicos.append({
+                "exame": _limpar(m_fn.group(1)),
+                "media_mensal": m_fn.group(2),
+                "prazo_entrega": prazo_global,
+            })
 
     return servicos
 
@@ -732,7 +838,7 @@ def _extrair_vigencia(texto: str) -> tuple[date | None, date | None, int]:
         meses = int(m.group(1))
 
     m = re.search(
-        r"a\s+partir\s+de\s+(.{5,30}?)(?:,|\.|\n|correspondente)",
+        r"a\s+partir\s+de\s+(.{5,30}?)(?:,|\.|\\n|correspondente)",
         texto, re.IGNORECASE
     )
     if m:
@@ -828,7 +934,6 @@ def extrair_contrato(caminho_pdf) -> dict:
         resultado["valor_mensal"] = _extrair_valor_mensal(texto)
         resultado["valor_global"] = _extrair_valor_global(texto)
 
-        # Tabela de serviços (auto-detecta formato A ou B)
         resultado["servicos"] = _extrair_servicos_tabela31(texto)
         resultado["servicos_contratados"] = _extrair_servicos_anexo1(texto_anexo1)
 
@@ -839,9 +944,15 @@ def extrair_contrato(caminho_pdf) -> dict:
         nome_test = widgets.get("nome_testemunha", "")
         cpf_test = widgets.get("cpf_testemunha", "")
 
-        # Fallback regex para representante
-        if not nome_rep:
-            nome_rep, cpf_rep = _extrair_representante_tecnico(texto)
+        # Fallback regex pdfplumber:
+        # Usa quando PyMuPDF não retornou nada OU retornou nome com apenas 1 palavra
+        # (widget de assinatura desenhada contém só o primeiro nome / apelido)
+        if not nome_rep or len(nome_rep.split()) < 2:
+            nome_rep_fb, cpf_rep_fb = _extrair_representante_tecnico(texto)
+            if nome_rep_fb:
+                nome_rep = nome_rep_fb
+            if cpf_rep_fb and not cpf_rep:
+                cpf_rep = cpf_rep_fb
 
         resultado["nome_representante"] = nome_rep
         resultado["cpf_representante"] = cpf_rep
