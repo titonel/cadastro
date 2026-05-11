@@ -1,0 +1,84 @@
+{% extends 'cadastro/base.html' %}
+{% load static %}
+
+{% block title %}Relatório de Produção — AME Caraguatatuba{% endblock %}
+
+{% block content %}
+<div style="max-width:700px; margin:2rem auto; padding:0 1rem;">
+
+  <h2 style="font-size:1.5rem; font-weight:700; margin-bottom:1.5rem; color:#1a1a2e;">
+    📄 Relatório de Produção Médica
+  </h2>
+
+  <p style="color:#555; margin-bottom:2rem;">
+    Selecione o prestador e o período para gerar o relatório de escala de produção
+    no formato XLSX (Excel), pronto para preenchimento e envio.
+  </p>
+
+  <form method="get" action="#" id="form-relatorio"
+        style="background:#fff; border:1px solid #ddd; border-radius:8px;
+               padding:2rem; box-shadow:0 2px 8px rgba(0,0,0,.07);">
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="prestador" style="display:block; font-weight:600; margin-bottom:.4rem;">Prestador</label>
+      <select name="prestador_id" id="prestador" required
+              style="width:100%; padding:.55rem .75rem; border:1px solid #ccc;
+                     border-radius:6px; font-size:1rem;">
+        <option value="">— selecione —</option>
+        {% for p in prestadores %}
+          <option value="{{ p.pk }}">{{ p.nome_empresa }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem;">
+      <div>
+        <label for="mes" style="display:block; font-weight:600; margin-bottom:.4rem;">Mês de início</label>
+        <select name="mes" id="mes"
+                style="width:100%; padding:.55rem .75rem; border:1px solid #ccc;
+                       border-radius:6px; font-size:1rem;">
+          {% for num, nome in meses %}
+            <option value="{{ num }}" {% if num == mes_atual %}selected{% endif %}>{{ nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="ano" style="display:block; font-weight:600; margin-bottom:.4rem;">Ano</label>
+        <select name="ano" id="ano"
+                style="width:100%; padding:.55rem .75rem; border:1px solid #ccc;
+                       border-radius:6px; font-size:1rem;">
+          {% for a in anos %}
+            <option value="{{ a }}" {% if a == ano_atual %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div style="background:#f0f7ff; border-left:4px solid #33CCCC; padding:.75rem 1rem;
+                border-radius:4px; margin-bottom:1.5rem; font-size:.9rem; color:#444;">
+      ℹ️ O período gerado será sempre do <strong>dia 21</strong> do mês selecionado
+      ao <strong>dia 20</strong> do mês subsequente.
+    </div>
+
+    <button type="submit" id="btn-gerar"
+            style="background:#33CCCC; color:#fff; border:none; padding:.7rem 2rem;
+                   border-radius:6px; font-size:1rem; font-weight:700; cursor:pointer;
+                   transition:background .2s;">
+      ⬇ Gerar Relatório XLSX
+    </button>
+  </form>
+
+</div>
+
+<script>
+document.getElementById('form-relatorio').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const sel = document.getElementById('prestador');
+  const pk  = sel.value;
+  if (!pk) { alert('Selecione um prestador.'); return; }
+  const mes = document.getElementById('mes').value;
+  const ano = document.getElementById('ano').value;
+  window.location.href = `/relatorio/${pk}/download/?mes=${mes}&ano=${ano}`;
+});
+</script>
+{% endblock %}
