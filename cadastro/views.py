@@ -102,35 +102,38 @@ def prestador_delete(request, pk):
 # ─── Helpers ───────────────────────────────────────────────────────────────────────────
 
 def _resolver_especialidade(nome_extraido: str) -> list:
-    """
-    Dado um nome de especialidade extraído do PDF, busca ou cria o objeto
-    Especialidade correspondente e retorna uma lista com ele (formato
-    aceito pelo campo initial de ModelMultipleChoiceField).
-    """
     if not nome_extraido:
         return []
-
     nome = nome_extraido.strip()
     esp = Especialidade.objects.filter(nome__iexact=nome).first()
-
     if not esp:
         for token in nome.split():
             if len(token) >= 5:
                 esp = Especialidade.objects.filter(nome__icontains=token).first()
                 if esp:
                     break
-
     if not esp:
         esp = Especialidade.objects.create(nome=nome, ativa=True)
-
     return [esp]
 
 
+def _title_case_nome(nome: str) -> str:
+    """Converte nome em MAIÚSCULAS para Title Case, preservando partículas."""
+    if not nome:
+        return nome
+    particulas = {"de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos"}
+    palavras = nome.strip().split()
+    resultado = []
+    for i, p in enumerate(palavras):
+        lower = p.lower()
+        if i > 0 and lower in particulas:
+            resultado.append(lower)
+        else:
+            resultado.append(p.capitalize())
+    return " ".join(resultado)
+
+
 def _prazo_para_dias(prazo_str: str) -> int:
-    """
-    Converte string de prazo como '5 dias úteis' em inteiro.
-    Retorna 0 se não conseguir interpretar.
-    """
     import re
     if not prazo_str:
         return 0
@@ -140,13 +143,9 @@ def _prazo_para_dias(prazo_str: str) -> int:
 
 def _montar_initial_formset(servicos_tabela: list, servicos_anexo1: list) -> list:
     """
-    Combina os dados da tabela financeira (3.1) com os prazos do Anexo 1
-    para gerar o initial data do ServicoFormSet (seção 8).
-
-    servicos_tabela: lista de dicts com descricao, quantidade, valor_unitario, valor_total
-    servicos_anexo1: lista de dicts com exame, media_mensal, prazo_entrega
+    Combina a tabela financeira (3.1) com os prazos do Anexo 1 para gerar
+    o initial data do ServicoFormSet (seção 8).
     """
-    # Monta índice de prazos por nome de exame (case-insensitive)
     prazos = {}
     for s in servicos_anexo1:
         chave = s.get("exame", "").strip().lower()
@@ -157,14 +156,14 @@ def _montar_initial_formset(servicos_tabela: list, servicos_anexo1: list) -> lis
         nome = s.get("descricao", "")
         chave = nome.strip().lower()
         prazo_dias = prazos.get(chave, 0)
-
         initial.append({
             "descricao": nome,
+            "tipo_servico": "exame",
+            "unidade_medida": "Exame",
             "quantidade_estimada_mes": s.get("quantidade", 0),
             "valor_unitario": s.get("valor_unitario", 0.0),
-            "prazo_entrega_laudo_dias": prazo_dias,
+            "prazo_entrega_laudo_dias": prazo_dias or None,
         })
-
     return initial
 
 
@@ -181,35 +180,34 @@ def contrato_upload(request):
 
             dados = extrair_contrato(contrato.arquivo.path)
 
-            contrato.razao_social_extraida  = dados["razao_social"]
-            contrato.cnpj_extraido          = dados["cnpj"]
-            contrato.objeto_extraido        = dados["objeto"]
-            contrato.servicos_extraidos     = dados["servicos"]
-            contrato.especialidade_extraida = dados["especialidade"]
-            contrato.data_inicio_extraida   = dados["data_assinatura"]
-            contrato.data_fim_extraida      = dados["data_fim"]
+            contrato.razao_social_extraida    = dados["razao_social"]
+            contrato.cnpj_extraido            = dados["cnpj"]
+            contrato.objeto_extraido          = dados["objeto"]
+            contrato.servicos_extraidos       = dados["servicos"]
+            contrato.especialidade_extraida   = dados["especialidade"]
+            contrato.data_inicio_extraida     = dados["data_assinatura"]
+            contrato.data_fim_extraida        = dados["data_fim"]
             contrato.meses_vigencia_extraidos = dados["meses_vigencia"]
-            contrato.valor_mensal_extraido  = dados["valor_mensal"]
-            contrato.valor_global_extraido  = dados["valor_global"]
+            contrato.valor_mensal_extraido    = dados["valor_mensal"]
+            contrato.valor_global_extraido    = dados["valor_global"]
             contrato.numero_processo_extraido = dados["numero_processo"]
-            contrato.erro_extracao          = dados["erro"] or ""
+            contrato.erro_extracao            = dados["erro"] or ""
 
             if dados["erro"]:
                 contrato.status = StatusImportacao.ERRO
             contrato.save()
 
-            # Persiste todos os dados extras (não mapeados no model) na sessão
+            # Persiste todos os campos extras (não mapeados no model) na sessão
             request.session[f"imp_{contrato.pk}"] = {
-                "nome_representante":  dados.get("nome_representante", ""),
-                "cpf_representante":   dados.get("cpf_representante",  ""),
-                "inscricao_municipal": dados.get("inscricao_municipal", ""),
-                "logradouro":          dados.get("logradouro", ""),
-                "numero":              dados.get("numero", ""),
-                "complemento":         dados.get("complemento", ""),
-                "bairro":              dados.get("bairro", ""),
-                "cep":                 dados.get("cep", ""),
-                "cidade":              dados.get("cidade", ""),
-                # servicos_contratados: lista do Anexo 1 com prazos
+                "nome_representante":   _title_case_nome(dados.get("nome_representante", "")),
+                "cpf_representante":    dados.get("cpf_representante", ""),
+                "inscricao_municipal":  dados.get("inscricao_municipal", ""),
+                "logradouro":           dados.get("logradouro", ""),
+                "numero":               dados.get("numero", ""),
+                "complemento":          dados.get("complemento", ""),
+                "bairro":               dados.get("bairro", ""),
+                "cep":                  dados.get("cep", ""),
+                "cidade":               dados.get("cidade", ""),
                 "servicos_contratados": dados.get("servicos_contratados", []),
             }
 
@@ -228,7 +226,6 @@ def contrato_revisao(request, pk):
     # Recupera dados extras da sessão (descartados após leitura)
     extras = request.session.pop(f"imp_{contrato.pk}", {})
 
-    # Resolve a especialidade extraída para objeto(s) do model
     especialidades_iniciais = _resolver_especialidade(contrato.especialidade_extraida)
 
     initial = {
@@ -250,15 +247,24 @@ def contrato_revisao(request, pk):
         "especialidades":      especialidades_iniciais,
         # Seção 7 – Vigência
         "data_inicio_contrato": contrato.data_inicio_extraida,
-        "data_fim_contrato":   contrato.data_fim_extraida,
-        "numero_processo":     contrato.numero_processo_extraido,
+        "data_fim_contrato":    contrato.data_fim_extraida,
+        "numero_processo":      contrato.numero_processo_extraido,
     }
+
+    # Monta initial do formset a partir dos serviços extraídos
+    servicos_tabela = contrato.servicos_extraidos or []
+    servicos_anexo1 = extras.get("servicos_contratados", [])
+    formset_initial = _montar_initial_formset(servicos_tabela, servicos_anexo1)
 
     if request.method == "POST":
         form = PrestadorForm(request.POST)
         formset = ServicoFormSet(request.POST)
         if form.is_valid() and formset.is_valid():
             prestador = form.save()
+            # Salva M2M manualmente (necessário pois commit=True por padrão)
+            especialidades_post = request.POST.getlist("especialidades")
+            if especialidades_post:
+                prestador.especialidades.set(especialidades_post)
             formset.instance = prestador
             formset.save()
             contrato.prestador = prestador
@@ -271,25 +277,33 @@ def contrato_revisao(request, pk):
             return redirect("cadastro:prestador_detail", pk=prestador.pk)
     else:
         form = PrestadorForm(initial=initial)
-        # Força o widget a pré-selecionar os checkboxes da especialidade
         if especialidades_iniciais:
             form.fields["especialidades"].initial = especialidades_iniciais
 
-        # Seção 8 – pré-popula o formset com os serviços extraídos
-        servicos_tabela   = contrato.servicos_extraidos or []
-        servicos_anexo1   = extras.get("servicos_contratados", [])
-        formset_initial   = _montar_initial_formset(servicos_tabela, servicos_anexo1)
-
-        if formset_initial:
-            from django.forms import formset_factory
-            formset = ServicoFormSet(initial=formset_initial)
-        else:
-            formset = ServicoFormSet()
+        # Seção 8 – pré-popula o formset com extra=len(initial) para mostrar as linhas
+        from django.forms import inlineformset_factory
+        from .models import ServicoContratado
+        from .forms import ServicoFormSet as _BaseFormSet
+        n = max(len(formset_initial), 1)
+        FormSetComExtra = inlineformset_factory(
+            Prestador,
+            ServicoContratado,
+            fields=[
+                "especialidade", "tipo_servico", "descricao", "unidade_medida",
+                "quantidade_estimada_mes", "valor_unitario",
+                "prazo_entrega_laudo_dias", "remoto", "observacoes",
+            ],
+            extra=n,
+            can_delete=True,
+        )
+        formset = FormSetComExtra(initial=formset_initial)
 
     return render(request, "cadastro/contrato_revisao.html", {
-        "contrato": contrato,
-        "form":     form,
-        "formset":  formset,
+        "contrato":         contrato,
+        "form":             form,
+        "formset":          formset,
+        "servicos_tabela":  servicos_tabela,
+        "servicos_anexo1":  servicos_anexo1,
     })
 
 

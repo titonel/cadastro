@@ -7,7 +7,7 @@ class PrestadorForm(forms.ModelForm):
     especialidades = forms.ModelMultipleChoiceField(
         queryset=Especialidade.objects.filter(ativa=True),
         widget=forms.CheckboxSelectMultiple,
-        required=True,
+        required=False,
         label="Especialidades Médicas",
     )
 
@@ -33,7 +33,17 @@ class PrestadorForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for field in self.fields.values():
+        # Torna todos os campos opcionais para permitir salvamento parcial
+        campos_obrigatorios = {"nome_empresa", "cnpj"}
+        for name, field in self.fields.items():
+            if name not in campos_obrigatorios:
+                field.required = False
+                # Remove validadores de formato em campos opcionais para não bloquear vazios
+                if hasattr(field, 'validators'):
+                    field.validators = [
+                        v for v in field.validators
+                        if name in campos_obrigatorios
+                    ]
             if isinstance(field.widget, (forms.TextInput, forms.EmailInput, forms.Select, forms.DateInput)):
                 field.widget.attrs.setdefault("class", "form-control")
             elif isinstance(field.widget, forms.CheckboxSelectMultiple):
@@ -50,7 +60,7 @@ ServicoFormSet = inlineformset_factory(
         "quantidade_estimada_mes", "valor_unitario",
         "prazo_entrega_laudo_dias", "remoto", "observacoes",
     ],
-    extra=1,
+    extra=0,          # não exibe linha vazia quando há initial data
     can_delete=True,
     widgets={
         "descricao": forms.TextInput(attrs={"class": "form-control"}),

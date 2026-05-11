@@ -59,29 +59,6 @@
       <span class="valor {% if not contrato.numero_processo_extraido %}ausente{% endif %}">{{ contrato.numero_processo_extraido|default:"Não identificado" }}</span>
     </div>
   </div>
-
-  {% if contrato.servicos_extraidos %}
-  <h3 style="font-size:.9rem;font-weight:700;margin-bottom:.6rem;color:var(--color-primary)">Serviços extraídos da tabela de preços</h3>
-  <div class="table-responsive">
-    <table>
-      <thead>
-        <tr><th>Descrição</th><th>Qtde./Mês</th><th>Valor Unit.</th><th>Total/Mês</th></tr>
-      </thead>
-      <tbody>
-        {% for s in contrato.servicos_extraidos %}
-        <tr>
-          <td>{{ s.descricao }}</td>
-          <td>{{ s.quantidade }}</td>
-          <td>R$ {{ s.valor_unitario|floatformat:2 }}</td>
-          <td>R$ {{ s.valor_total|floatformat:2 }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p style="color:var(--color-text-muted);font-size:.875rem;margin-top:.5rem">Nenhum serviço extraído automaticamente. Preencha manualmente na seção abaixo.</p>
-  {% endif %}
 </div>
 
 <!-- Formulário para complementar e confirmar -->
@@ -158,6 +135,45 @@
 
   <div class="card form-section">
     <h2 class="form-section-title">8. Serviços Contratados</h2>
+
+    {% if contrato.servicos_extraidos %}
+    <h3 style="font-size:.875rem;font-weight:600;color:var(--color-primary);margin-bottom:.6rem">Serviços identificados no contrato</h3>
+    <div class="table-responsive" style="margin-bottom:1.5rem">
+      <table>
+        <thead>
+          <tr>
+            <th>Descrição</th>
+            <th>Qtde./Mês</th>
+            <th>Valor Unit.</th>
+            <th>Total/Mês</th>
+            {% if servicos_anexo1 %}<th>Prazo do Laudo</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in contrato.servicos_extraidos %}
+          <tr>
+            <td>{{ s.descricao }}</td>
+            <td style="text-align:right">{{ s.quantidade }}</td>
+            <td style="text-align:right">R$ {{ s.valor_unitario|floatformat:2 }}</td>
+            <td style="text-align:right">R$ {{ s.valor_total|floatformat:2 }}</td>
+            {% if servicos_anexo1 %}
+            <td>
+              {% for sa in servicos_anexo1 %}
+                {% if sa.exame|lower == s.descricao|lower %}{{ sa.prazo_entrega }}{% endif %}
+              {% endfor %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <h3 style="font-size:.875rem;font-weight:600;color:var(--color-text-muted);margin-bottom:.75rem">
+      {% if contrato.servicos_extraidos %}Revisar e complementar dados dos serviços{% else %}Adicionar serviços manualmente{% endif %}
+    </h3>
+
     {{ formset.management_form }}
     <div id="formset-container">
       {% for fs_form in formset %}
@@ -178,6 +194,10 @@
       </div>
       {% endfor %}
     </div>
+
+    <button type="button" id="btn-add-servico" class="btn btn-secondary" style="margin-top:.75rem;font-size:.8rem">
+      + Adicionar serviço
+    </button>
   </div>
 
   {% if form.errors or formset.errors %}
@@ -192,4 +212,33 @@
     <a href="{% url 'cadastro:contrato_upload' %}" class="btn btn-secondary">Cancelar</a>
   </div>
 </form>
+
+<script>
+// Botão "+ Adicionar serviço" – duplica a última linha do formset e incrementa o índice
+(function () {
+  const btn = document.getElementById('btn-add-servico');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    const container = document.getElementById('formset-container');
+    const totalInput = document.querySelector('[name$="-TOTAL_FORMS"]');
+    const rows = container.querySelectorAll('.formset-row');
+    const idx = rows.length;
+    // Clona a última linha (ou a primeira se não houver nenhuma)
+    const source = rows.length > 0 ? rows[rows.length - 1] : rows[0];
+    if (!source) return;
+    const clone = source.cloneNode(true);
+    // Atualiza índices nos atributos name e id
+    clone.innerHTML = clone.innerHTML
+      .replace(/-(\d+)-/g, `-${idx}-`)
+      .replace(/id="id_[^"]*-(\d+)-/g, (m) => m.replace(/-(\d+)-/, `-${idx}-`));
+    // Limpa valores dos inputs clonados
+    clone.querySelectorAll('input:not([type=hidden]), textarea, select').forEach(el => {
+      if (el.type === 'checkbox') { el.checked = false; }
+      else { el.value = ''; }
+    });
+    container.appendChild(clone);
+    if (totalInput) totalInput.value = parseInt(totalInput.value) + 1;
+  });
+})();
+</script>
 {% endblock %}
