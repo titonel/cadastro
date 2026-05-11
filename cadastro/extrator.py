@@ -1,21 +1,9 @@
 """
 extrator.py – Extrai dados estruturados de contratos PDF do padrão SECONCI/AME.
-
-Campos extraídos:
-  - razao_social       : razão social da contratada
-  - cnpj               : CNPJ da contratada
-  - objeto             : descrição do objeto do contrato (cláusula 1.1)
-  - servicos           : lista de serviços com descrição, qtde, valor unitário, unidade
-  - data_assinatura    : data de assinatura (= data início do contrato)
-  - data_fim           : prazo final calculado a partir da vigência em meses
-  - meses_vigencia     : número de meses de vigência
-  - valor_mensal       : valor estimado mensal
-  - valor_global       : valor global estimado
-  - numero_processo    : número do processo (Nº do processo)
 """
 
 import re
-from datetime import date, timedelta
+from datetime import date
 from dateutil.relativedelta import relativedelta
 
 try:
@@ -31,7 +19,7 @@ except ImportError:
 
 def _mes_pt(nome: str) -> int:
     meses = {
-        "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3,
+        "janeiro": 1, "fevereiro": 2, "mar\u00e7o": 3, "marco": 3,
         "abril": 4, "maio": 5, "junho": 6, "julho": 7,
         "agosto": 8, "setembro": 9, "outubro": 10,
         "novembro": 11, "dezembro": 12,
@@ -40,18 +28,12 @@ def _mes_pt(nome: str) -> int:
 
 
 def _parse_data_pt(texto: str) -> date | None:
-    """Converte strings como '01 de agosto de 2026' ou '01/08/2026' em date."""
-    # Formato extenso: 01 de agosto de 2026
-    m = re.search(
-        r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})",
-        texto, re.IGNORECASE
-    )
+    m = re.search(r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})", texto, re.IGNORECASE)
     if m:
         dia, mes_nome, ano = int(m.group(1)), m.group(2), int(m.group(3))
         mes = _mes_pt(mes_nome)
         if mes:
             return date(ano, mes, dia)
-    # Formato numérico: 01/08/2026
     m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", texto)
     if m:
         return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
@@ -63,11 +45,8 @@ def _limpar(texto: str) -> str:
 
 
 def _extrair_texto_pdf(caminho_pdf) -> str:
-    """Extrai texto completo do PDF usando pdfplumber."""
     if not HAS_PDFPLUMBER:
-        raise ImportError(
-            "pdfplumber não está instalado. Execute: pip install pdfplumber"
-        )
+        raise ImportError("pdfplumber n\u00e3o est\u00e1 instalado. Execute: pip install pdfplumber")
     texto = []
     with pdfplumber.open(caminho_pdf) as pdf:
         for pagina in pdf.pages:
@@ -82,11 +61,10 @@ def _extrair_texto_pdf(caminho_pdf) -> str:
 # ---------------------------------------------------------------------------
 
 def _extrair_numero_processo(texto: str) -> str:
-    m = re.search(r"N[ºo°\.]+\s*do\s*processo[:\s]+([\d]+)", texto, re.IGNORECASE)
+    m = re.search(r"N[\u00bao\u00b0\.]+\s*do\s*processo[:\s]+([\d]+)", texto, re.IGNORECASE)
     if m:
         return m.group(1).strip()
-    # formato alternativo no topo: "1527 – ID: 9164"
-    m = re.search(r"(\d{3,6})\s*[–-]\s*ID[:\s]*(\d+)", texto)
+    m = re.search(r"(\d{3,6})\s*[\u2013-]\s*ID[:\s]*(\d+)", texto)
     if m:
         return m.group(1).strip()
     return ""
@@ -94,31 +72,29 @@ def _extrair_numero_processo(texto: str) -> str:
 
 def _extrair_razao_social(texto: str) -> str:
     """
-    Padrão: 'Pelo presente instrumento, RAZAO SOCIAL LTDA/ME/SA, inscrita'
-    ou      'RAZAO SOCIAL LTDA, inscrito no CNPJ'
+    Extrai a raz\u00e3o social da contratada.
+    Padr\u00e3o principal: 'Pelo presente instrumento, RAZAO SOCIAL, inscrita'
     """
-    # Padrão V14 (novo formato)
     m = re.search(
-        r"instrumento,\s+([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][A-ZÁÀÃÂÉÊÍÓÔÕÚÇÇ\s\-\.]{2,80}?)\s*,?\s*inscrit",
+        r"instrumento,\s+([A-Z\u00c1\u00c0\u00c3\u00c2\u00c9\u00ca\u00cd\u00d3\u00d4\u00d5\u00da\u00c7][A-Z\u00c1\u00c0\u00c3\u00c2\u00c9\u00ca\u00cd\u00d3\u00d4\u00d5\u00da\u00c7\s\-\.]{2,80}?)\s*,?\s*inscrit",
         texto, re.IGNORECASE
     )
-    if m:
-        return _limpar(m.group(1))
-    # Padrão "CONTRATADO(A)  Nome: Fulano"
-    m = re.search(r"CONTRATADO\s*\(A\)\s*Nome:\s*(.+)", texto)
     if m:
         return _limpar(m.group(1))
     return ""
 
 
 def _extrair_cnpj(texto: str) -> str:
-    m = re.search(
-        r"CNPJ\s*(?:n[ºo°\.]+|sob\s+o\s+n[ºo°\.]+)?\s*[:\s]*([\d]{2}[\.\/]?[\d]{3}[\.\/]?[\d]{3}[\.\/]?[\d]{4}[-\s]?[\d]{2})",
+    """
+    Extrai o CNPJ da contratada (primeiro CNPJ que aparece no texto,
+    que pertence \u00e0 contratada, n\u00e3o ao SECONCI).
+    """
+    matches = re.findall(
+        r"CNPJ\s*(?:n[\u00bao\u00b0\.]+|sob\s+o\s+n[\u00bao\u00b0\.]+)?\s*[:\s]*([\d]{2}[\.\/]?[\d]{3}[\.\/]?[\d]{3}[\.\/]?[\d]{4}[-\s]?[\d]{2})",
         texto, re.IGNORECASE
     )
-    if m:
-        raw = re.sub(r"\s", "", m.group(1))
-        # Formata se vier sem pontuação
+    if matches:
+        raw = re.sub(r"\s", "", matches[0])
         if re.match(r"^\d{14}$", raw):
             raw = f"{raw[:2]}.{raw[2:5]}.{raw[5:8]}/{raw[8:12]}-{raw[12:]}"
         return raw
@@ -127,35 +103,90 @@ def _extrair_cnpj(texto: str) -> str:
 
 def _extrair_objeto(texto: str) -> str:
     """
-    Extrai o texto da cláusula 1.1 — objeto do contrato.
+    Extrai o objeto real do contrato a partir da cl\u00e1usula 1.1.
+    Captura o que vem ap\u00f3s 'empresa especializada na presta\u00e7\u00e3o de '
+    ou ap\u00f3s 'servi\u00e7os de ' na cl\u00e1usula 1.1.
+    Exemplos:
+      'servi\u00e7os m\u00e9dicos de Pneumologia Pedi\u00e1trica'
+      'servi\u00e7os de Cardiologia'
     """
-    m = re.search(
-        r"1\.1[\s\S]{0,20}?(?:objeto|constitui objeto)[\s\S]{0,10}?contrat(?:o|ação)[\s\S]{0,20}?(?:é a|é)?\s+([^\n]{20,400})",
-        texto, re.IGNORECASE
-    )
+    # Padr\u00e3o principal: captura tudo ap\u00f3s 'presta\u00e7\u00e3o de ' ou 'servi\u00e7os de '
+    # dentro do trecho da cl\u00e1usula 1.1
+    bloco_11 = ""
+    m = re.search(r"1\.1.+?1\.2", texto, re.DOTALL)
     if m:
-        return _limpar(m.group(1))
-    # Fallback: pega tudo entre '1.1' e '1.2'
-    m = re.search(r"1\.1(.+?)1\.2", texto, re.DOTALL)
-    if m:
-        trecho = _limpar(m.group(1))
-        return trecho[:400]
+        bloco_11 = m.group(0)
+    else:
+        # Sem 1.2, pega at\u00e9 300 chars ap\u00f3s 1.1
+        m = re.search(r"1\.1.{0,300}", texto, re.DOTALL)
+        if m:
+            bloco_11 = m.group(0)
+
+    if bloco_11:
+        # Tenta capturar ap\u00f3s 'presta\u00e7\u00e3o de servi\u00e7os de ' ou 'presta\u00e7\u00e3o de '
+        m = re.search(
+            r"presta[\u00e7c][\u00e3a]o\s+de\s+servi[\u00e7c]os\s+(?:m[\u00e9e]dicos\s+)?de\s+([^\n\.]{5,200})",
+            bloco_11, re.IGNORECASE
+        )
+        if m:
+            return _limpar(m.group(1)).rstrip(".")
+
+        m = re.search(
+            r"presta[\u00e7c][\u00e3a]o\s+de\s+([^\n\.]{5,200})",
+            bloco_11, re.IGNORECASE
+        )
+        if m:
+            return _limpar(m.group(1)).rstrip(".")
+
+        # Fallback: texto completo entre 1.1 e 1.2 limpo
+        return _limpar(bloco_11.replace("1.1", "").replace("1.2", ""))[:300].rstrip(".")
+
     return ""
 
 
-def _extrair_servicos(texto: str) -> list[dict]:
+def _extrair_representante_legal(texto: str) -> tuple[str, str]:
     """
-    Extrai linhas da tabela de serviços da cláusula 3.1.
-    Retorna lista de dicts com: descricao, unidade, quantidade, valor_unitario, valor_total.
+    Extrai nome e CPF do representante legal a partir do quadro de assinaturas.
+    Padr\u00e3o: 'CONTRATADO (A) Nome: Fulano de Tal CPF: 000.000.000-00'
     """
-    servicos = []
+    nome = ""
+    cpf = ""
 
-    # Tenta encontrar o bloco da tabela de preços na seção 3.1
+    # Captura o bloco do CONTRATADO(A) no quadro de assinaturas
+    m = re.search(
+        r"CONTRATADO\s*\(A\)[\s\S]{0,20}?Nome[:\s]+([^\n]{3,80})[\s\S]{0,30}?CPF[:\s]+([\d]{3}[\. ]?[\d]{3}[\. ]?[\d]{3}[-\. ]?[\d]{2})",
+        texto, re.IGNORECASE
+    )
+    if m:
+        nome = _limpar(m.group(1))
+        cpf_raw = re.sub(r"[^\d]", "", m.group(2))
+        if len(cpf_raw) == 11:
+            cpf = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:]}"
+        else:
+            cpf = m.group(2).strip()
+        return nome, cpf
+
+    # Fallback: bloco de assinatura com nome e CPF em linhas separadas
+    m = re.search(
+        r"CONTRATADO\s*\(A\)[\s\S]{0,60}?Nome:\s*([^\n]+)[\s\S]{0,20}?CPF:\s*([\d\. -]{11,14})",
+        texto, re.IGNORECASE
+    )
+    if m:
+        nome = _limpar(m.group(1))
+        cpf_raw = re.sub(r"[^\d]", "", m.group(2))
+        if len(cpf_raw) == 11:
+            cpf = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:]}"
+        else:
+            cpf = m.group(2).strip()
+
+    return nome, cpf
+
+
+def _extrair_servicos(texto: str) -> list[dict]:
+    servicos = []
     m = re.search(r"3\.1.+?Valor\s+estimado\s+mensal", texto, re.DOTALL | re.IGNORECASE)
     bloco = m.group(0) if m else texto
 
-    # Padrão: linha com número, descrição, valor unit e valor total
-    # Ex: "48 Consulta 62,40 2.995,20"
     padrao_linha = re.compile(
         r"(\d+)\s+(Consulta|Laudo|Exame|MAPA|HOLTER|Eletrocardiograma|Cirurgia[\w\s]*)"
         r"\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})",
@@ -174,10 +205,9 @@ def _extrair_servicos(texto: str) -> list[dict]:
             "valor_total": v_total,
         })
 
-    # Fallback: tenta extrair pares valor unitário / valor total isolados
     if not servicos:
         padrao_valor = re.compile(
-            r"([A-Za-záàãâéêíóôõúçÁÀÃÂÉÊÍÓÔÕÚÇ][\w\s]{2,40})\s+(\d+)\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})",
+            r"([A-Za-z\u00e1\u00e0\u00e3\u00e2\u00e9\u00ea\u00ed\u00f3\u00f4\u00f5\u00fa\u00e7][\w\s]{2,40})\s+(\d+)\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})",
             re.IGNORECASE
         )
         for m in padrao_valor.finditer(bloco):
@@ -201,7 +231,6 @@ def _extrair_valor_mensal(texto: str) -> float:
     )
     if m:
         return float(m.group(1).replace(".", "").replace(",", "."))
-    # Tenta capturar o valor ao lado de 'Valor estimado mensal' na tabela
     m = re.search(
         r"Valor\s+estimado\s+mensal[\s\S]{0,30}?([\d\.]+,[\d]{2})",
         texto, re.IGNORECASE
@@ -222,25 +251,14 @@ def _extrair_valor_global(texto: str) -> float:
 
 
 def _extrair_vigencia(texto: str) -> tuple[date | None, date | None, int]:
-    """
-    Extrai data de início, data fim e meses de vigência.
-    Padrões buscados:
-      - 'vigorará pelo prazo de 60 (sessenta) meses, contados a partir de 01/08/2026'
-      - 'São Paulo, 01 de agosto de 2026' (data de assinatura)
-    """
     data_inicio = None
     data_fim = None
     meses = 0
 
-    # Extrai meses de vigência
-    m = re.search(
-        r"prazo\s+de\s+(\d+)\s*\([\w\s]+\)\s*meses",
-        texto, re.IGNORECASE
-    )
+    m = re.search(r"prazo\s+de\s+(\d+)\s*\([\w\s]+\)\s*meses", texto, re.IGNORECASE)
     if m:
         meses = int(m.group(1))
 
-    # Data início: 'contados a partir de DD/MM/AAAA' ou 'a partir de DD de mês de AAAA'
     m = re.search(
         r"a\s+partir\s+de\s+(.{5,30}?)(?:,|\.|\n|correspondente)",
         texto, re.IGNORECASE
@@ -248,16 +266,14 @@ def _extrair_vigencia(texto: str) -> tuple[date | None, date | None, int]:
     if m:
         data_inicio = _parse_data_pt(m.group(1))
 
-    # Fallback: data de assinatura no rodapé 'São Paulo, DD de mês de AAAA'
     if not data_inicio:
         m = re.search(
-            r"S[ãa]o\s+Paulo,\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})",
+            r"S[\u00e3a]o\s+Paulo,\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})",
             texto, re.IGNORECASE
         )
         if m:
             data_inicio = _parse_data_pt(m.group(1))
 
-    # Calcula data fim
     if data_inicio and meses:
         data_fim = data_inicio + relativedelta(months=meses)
 
@@ -265,14 +281,11 @@ def _extrair_vigencia(texto: str) -> tuple[date | None, date | None, int]:
 
 
 def _extrair_especialidade(texto: str) -> str:
-    """
-    Extrai a especialidade médica mencionada no objeto ou na tabela de serviços.
-    """
     especialidades_conhecidas = [
-        "Pneumologia Pediátrica", "Pneumologia Pediatrica",
+        "Pneumologia Pedi\u00e1trica", "Pneumologia Pediatrica",
         "Cardiologia", "Oftalmologia", "Gastroenterologia",
         "Ortopedia", "Neurologia", "Endocrinologia", "Dermatologia",
-        "Urologia", "Ginecologia", "Obstetrícia", "Reumatologia",
+        "Urologia", "Ginecologia", "Obstetr\u00edcia", "Reumatologia",
         "Oncologia", "Hematologia", "Nefrologia", "Infectologia",
         "Psiquiatria", "Pediatria", "Geriatria", "Cirurgia Geral",
         "Otorrinolaringologia", "Proctologia", "Angiologia",
@@ -280,24 +293,15 @@ def _extrair_especialidade(texto: str) -> str:
     ]
     for esp in especialidades_conhecidas:
         if esp.lower() in texto.lower():
-            # Normaliza Pediatrica → Pediátrica
-            return esp.replace("Pediatrica", "Pediátrica")
+            return esp.replace("Pediatrica", "Pedi\u00e1trica")
     return ""
 
 
 # ---------------------------------------------------------------------------
-# Função principal
+# Fun\u00e7\u00e3o principal
 # ---------------------------------------------------------------------------
 
 def extrair_contrato(caminho_pdf) -> dict:
-    """
-    Extrai dados de um contrato PDF no padrão SECONCI/AME.
-
-    Retorna dict com:
-      razao_social, cnpj, objeto, servicos, especialidade,
-      data_assinatura, data_fim, meses_vigencia,
-      valor_mensal, valor_global, numero_processo, erro (None se OK)
-    """
     resultado = {
         "razao_social": "",
         "cnpj": "",
@@ -310,6 +314,8 @@ def extrair_contrato(caminho_pdf) -> dict:
         "valor_mensal": 0.0,
         "valor_global": 0.0,
         "numero_processo": "",
+        "nome_representante": "",
+        "cpf_representante": "",
         "erro": None,
     }
 
@@ -329,12 +335,16 @@ def extrair_contrato(caminho_pdf) -> dict:
         resultado["valor_mensal"] = _extrair_valor_mensal(texto)
         resultado["valor_global"] = _extrair_valor_global(texto)
 
+        nome_rep, cpf_rep = _extrair_representante_legal(texto)
+        resultado["nome_representante"] = nome_rep
+        resultado["cpf_representante"] = cpf_rep
+
         data_inicio, data_fim, meses = _extrair_vigencia(texto)
         resultado["data_assinatura"] = data_inicio
         resultado["data_fim"] = data_fim
         resultado["meses_vigencia"] = meses
 
     except Exception as e:
-        resultado["erro"] = f"Erro durante extração: {e}"
+        resultado["erro"] = f"Erro durante extra\u00e7\u00e3o: {e}"
 
     return resultado
