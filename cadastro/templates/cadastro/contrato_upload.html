@@ -1,0 +1,106 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Importar Contrato PDF – AME{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">📄 Importar Contrato PDF</h1>
+  <a href="{% url 'cadastro:prestador_list' %}" class="btn btn-secondary">← Voltar</a>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h2 class="form-section-title">Enviar novo contrato</h2>
+  <p style="color:var(--color-text-muted);font-size:.875rem;margin-bottom:1.25rem">
+    Envie um contrato no padrão SECONCI/AME. O sistema extrairá automaticamente a razão social da contratada,
+    o objeto do contrato, os serviços contratados, a data de início (assinatura) e o prazo final.
+  </p>
+
+  <form method="post" enctype="multipart/form-data" id="upload-form">
+    {% csrf_token %}
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('arquivo-pdf').click()">
+      <div class="drop-zone-icon">📑</div>
+      <p><strong>Clique para selecionar</strong> ou arraste o PDF aqui</p>
+      <p style="font-size:.8rem;color:var(--color-text-muted);margin-top:.4rem">Somente arquivos .pdf</p>
+      <div id="arquivo-nome" style="margin-top:.75rem;font-size:.875rem;color:var(--color-primary);font-weight:600"></div>
+    </div>
+    <div style="display:none">{{ form.arquivo }}</div>
+    {% if form.arquivo.errors %}
+    <p style="color:var(--color-error);font-size:.85rem;margin-top:.5rem">{{ form.arquivo.errors }}</p>
+    {% endif %}
+    <div style="margin-top:1.25rem">
+      <button type="submit" class="btn btn-primary" id="btn-enviar" disabled>⬆ Processar Contrato</button>
+    </div>
+  </form>
+</div>
+
+{% if importacoes %}
+<div class="card">
+  <h2 class="form-section-title">Importações anteriores</h2>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>Arquivo</th>
+          <th>Razão Social Extraída</th>
+          <th>Início</th>
+          <th>Fim</th>
+          <th>Status</th>
+          <th>Enviado em</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for imp in importacoes %}
+        <tr>
+          <td style="font-size:.8rem">{{ imp.nome_arquivo }}</td>
+          <td>{{ imp.razao_social_extraida|default:"—" }}</td>
+          <td>{{ imp.data_inicio_extraida|date:"d/m/Y"|default:"—" }}</td>
+          <td>{{ imp.data_fim_extraida|date:"d/m/Y"|default:"—" }}</td>
+          <td>
+            <span class="badge badge-{{ imp.status }}">{{ imp.get_status_display }}</span>
+          </td>
+          <td style="font-size:.8rem">{{ imp.enviado_em|date:"d/m/Y H:i" }}</td>
+          <td style="white-space:nowrap">
+            {% if imp.status == 'pendente' or imp.status == 'erro' %}
+            <a href="{% url 'cadastro:contrato_revisao' imp.pk %}" class="btn btn-secondary btn-sm">Revisar</a>
+            <a href="{% url 'cadastro:contrato_ignorar' imp.pk %}" class="btn btn-warning btn-sm">Ignorar</a>
+            {% elif imp.prestador %}
+            <a href="{% url 'cadastro:prestador_detail' imp.prestador.pk %}" class="btn btn-secondary btn-sm">Ver Prestador</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  const dropZone = document.getElementById('drop-zone');
+  const input = document.getElementById('arquivo-pdf');
+  const nomeDiv = document.getElementById('arquivo-nome');
+  const btnEnviar = document.getElementById('btn-enviar');
+
+  function mostrarNome(nome) {
+    nomeDiv.textContent = '✔ ' + nome;
+    btnEnviar.disabled = false;
+  }
+
+  input.addEventListener('change', () => {
+    if (input.files.length) mostrarNome(input.files[0].name);
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length && files[0].type === 'application/pdf') {
+      const dt = new DataTransfer();
+      dt.items.add(files[0]);
+      input.files = dt.files;
+      mostrarNome(files[0].name);
+    }
+  });
+</script>
+{% endblock %}

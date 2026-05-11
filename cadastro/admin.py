@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Prestador, ServicoContratado, Especialidade
+from .models import Prestador, ServicoContratado, Especialidade, ContratoUpload
 
 
 @admin.register(Especialidade)
@@ -50,3 +50,14 @@ class ServicoAdmin(admin.ModelAdmin):
     list_filter = ("tipo_servico", "remoto")
     search_fields = ("descricao", "prestador__nome_empresa")
     autocomplete_fields = ("prestador",)
+
+
+@admin.register(ContratoUpload)
+class ContratoUploadAdmin(admin.ModelAdmin):
+    list_display = ("nome_arquivo", "razao_social_extraida", "cnpj_extraido", "data_inicio_extraida", "data_fim_extraida", "status", "enviado_em")
+    list_filter = ("status",)
+    readonly_fields = ("nome_arquivo", "enviado_em", "razao_social_extraida", "cnpj_extraido",
+                       "objeto_extraido", "servicos_extraidos", "especialidade_extraida",
+                       "data_inicio_extraida", "data_fim_extraida", "meses_vigencia_extraidos",
+                       "valor_mensal_extraido", "valor_global_extraido", "numero_processo_extraido",
+                       "erro_extracao")

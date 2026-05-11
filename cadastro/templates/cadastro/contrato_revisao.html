@@ -1,0 +1,195 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Revisar Contrato Extraído – AME{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{% url 'cadastro:contrato_upload' %}" style="font-size:.875rem;color:var(--color-text-muted)">← Voltar para importações</a>
+    <h1 class="page-title" style="margin-top:.25rem">Revisar Dados Extraídos</h1>
+    <span style="font-size:.85rem;color:var(--color-text-muted)">{{ contrato.nome_arquivo }}</span>
+  </div>
+  <a href="{% url 'cadastro:contrato_ignorar' contrato.pk %}" class="btn btn-warning">Ignorar esta importação</a>
+</div>
+
+{% if contrato.erro_extracao %}
+<div class="card" style="border-color:#e0ced7;margin-bottom:1rem">
+  <strong style="color:var(--color-error)">⚠ Aviso de extração:</strong>
+  <p style="margin-top:.4rem;font-size:.875rem">{{ contrato.erro_extracao }}</p>
+  <p style="margin-top:.4rem;font-size:.8rem;color:var(--color-text-muted)">Os dados extraídos podem estar incompletos. Revise e preencha manualmente os campos necessários antes de confirmar.</p>
+</div>
+{% endif %}
+
+<!-- Resumo do que foi extraído -->
+<div class="card" style="margin-bottom:1.5rem">
+  <h2 class="form-section-title">📋 Dados Extraídos do PDF</h2>
+  <div class="extrato-box">
+    <div class="extrato-campo">
+      <span class="chave">Razão Social</span>
+      <span class="valor {% if not contrato.razao_social_extraida %}ausente{% endif %}">{{ contrato.razao_social_extraida|default:"Não identificado" }}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">CNPJ</span>
+      <span class="valor {% if not contrato.cnpj_extraido %}ausente{% endif %}">{{ contrato.cnpj_extraido|default:"Não identificado" }}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Objeto do Contrato</span>
+      <span class="valor {% if not contrato.objeto_extraido %}ausente{% endif %}">{{ contrato.objeto_extraido|default:"Não identificado" }}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Especialidade</span>
+      <span class="valor {% if not contrato.especialidade_extraida %}ausente{% endif %}">{{ contrato.especialidade_extraida|default:"Não identificada" }}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Data de Início (assinatura)</span>
+      <span class="valor {% if not contrato.data_inicio_extraida %}ausente{% endif %}">{{ contrato.data_inicio_extraida|date:"d/m/Y"|default:"Não identificada" }}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Prazo Final</span>
+      <span class="valor {% if not contrato.data_fim_extraida %}ausente{% endif %}">{{ contrato.data_fim_extraida|date:"d/m/Y"|default:"Não calculado" }}{% if contrato.meses_vigencia_extraidos %} <span style="color:var(--color-text-muted);font-size:.8rem">({{ contrato.meses_vigencia_extraidos }} meses)</span>{% endif %}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Valor Mensal Estimado</span>
+      <span class="valor">{% if contrato.valor_mensal_extraido %}R$ {{ contrato.valor_mensal_extraido|floatformat:2 }}{% else %}<span class="ausente">Não identificado</span>{% endif %}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Valor Global Estimado</span>
+      <span class="valor">{% if contrato.valor_global_extraido %}R$ {{ contrato.valor_global_extraido|floatformat:2 }}{% else %}<span class="ausente">Não identificado</span>{% endif %}</span>
+    </div>
+    <div class="extrato-campo">
+      <span class="chave">Nº do Processo</span>
+      <span class="valor {% if not contrato.numero_processo_extraido %}ausente{% endif %}">{{ contrato.numero_processo_extraido|default:"Não identificado" }}</span>
+    </div>
+  </div>
+
+  {% if contrato.servicos_extraidos %}
+  <h3 style="font-size:.9rem;font-weight:700;margin-bottom:.6rem;color:var(--color-primary)">Serviços extraídos da tabela de preços</h3>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr><th>Descrição</th><th>Qtde./Mês</th><th>Valor Unit.</th><th>Total/Mês</th></tr>
+      </thead>
+      <tbody>
+        {% for s in contrato.servicos_extraidos %}
+        <tr>
+          <td>{{ s.descricao }}</td>
+          <td>{{ s.quantidade }}</td>
+          <td>R$ {{ s.valor_unitario|floatformat:2 }}</td>
+          <td>R$ {{ s.valor_total|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--color-text-muted);font-size:.875rem;margin-top:.5rem">Nenhum serviço extraído automaticamente. Preencha manualmente na seção abaixo.</p>
+  {% endif %}
+</div>
+
+<!-- Formulário para complementar e confirmar -->
+<p style="color:var(--color-text-muted);font-size:.875rem;margin-bottom:1rem">
+  ⬇ Revise, complete os dados faltantes e clique em <strong>Confirmar Cadastro</strong> para criar o prestador.
+</p>
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="card form-section">
+    <h2 class="form-section-title">1. Dados da Empresa</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_empresa.label }}</label>{{ form.nome_empresa }}</div>
+      <div class="form-group"><label>{{ form.cnpj.label }}</label>{{ form.cnpj }}</div>
+      <div class="form-group"><label>{{ form.inscricao_municipal.label }}</label>{{ form.inscricao_municipal }}</div>
+      <div class="form-group"><label>{{ form.inscricao_estadual.label }}</label>{{ form.inscricao_estadual }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">2. Endereço</h2>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:span 2"><label>{{ form.logradouro.label }}</label>{{ form.logradouro }}</div>
+      <div class="form-group"><label>{{ form.numero.label }}</label>{{ form.numero }}</div>
+      <div class="form-group"><label>{{ form.complemento.label }}</label>{{ form.complemento }}</div>
+      <div class="form-group"><label>{{ form.bairro.label }}</label>{{ form.bairro }}</div>
+      <div class="form-group"><label>{{ form.cidade.label }}</label>{{ form.cidade }}</div>
+      <div class="form-group"><label>{{ form.estado.label }}</label>{{ form.estado }}</div>
+      <div class="form-group"><label>{{ form.cep.label }}</label>{{ form.cep }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">3. Contato</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>{{ form.telefone.label }}</label>{{ form.telefone }}</div>
+      <div class="form-group"><label>{{ form.email.label }}</label>{{ form.email }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">4. Representante Legal</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_representante.label }}</label>{{ form.nome_representante }}</div>
+      <div class="form-group"><label>{{ form.cpf_representante.label }}</label>{{ form.cpf_representante }}</div>
+      <div class="form-group"><label>{{ form.crm_representante.label }}</label>{{ form.crm_representante }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">5. Testemunha</h2>
+    <div class="form-grid">
+      <div class="form-group full"><label>{{ form.nome_testemunha.label }}</label>{{ form.nome_testemunha }}</div>
+      <div class="form-group"><label>{{ form.telefone_testemunha.label }}</label>{{ form.telefone_testemunha }}</div>
+      <div class="form-group"><label>{{ form.email_testemunha.label }}</label>{{ form.email_testemunha }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">6. Especialidades Médicas</h2>
+    {{ form.especialidades }}
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">7. Vigência do Contrato</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>{{ form.data_inicio_contrato.label }}</label>{{ form.data_inicio_contrato }}</div>
+      <div class="form-group"><label>{{ form.data_fim_contrato.label }}</label>{{ form.data_fim_contrato }}</div>
+      <div class="form-group"><label>{{ form.numero_processo.label }}</label>{{ form.numero_processo }}</div>
+      <div class="form-group"><label>Status</label>{{ form.ativo }}</div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <h2 class="form-section-title">8. Serviços Contratados</h2>
+    {{ formset.management_form }}
+    <div id="formset-container">
+      {% for fs_form in formset %}
+      <div class="formset-row">
+        {% if fs_form.instance.pk %}{{ fs_form.DELETE }}{% endif %}
+        <div class="formset-grid">
+          <div class="form-group"><label>{{ fs_form.tipo_servico.label }}</label>{{ fs_form.tipo_servico }}</div>
+          <div class="form-group"><label>{{ fs_form.especialidade.label }}</label>{{ fs_form.especialidade }}</div>
+          <div class="form-group" style="grid-column:span 2"><label>{{ fs_form.descricao.label }}</label>{{ fs_form.descricao }}</div>
+          <div class="form-group"><label>{{ fs_form.unidade_medida.label }}</label>{{ fs_form.unidade_medida }}</div>
+          <div class="form-group"><label>{{ fs_form.quantidade_estimada_mes.label }}</label>{{ fs_form.quantidade_estimada_mes }}</div>
+          <div class="form-group"><label>{{ fs_form.valor_unitario.label }}</label>{{ fs_form.valor_unitario }}</div>
+          <div class="form-group"><label>{{ fs_form.prazo_entrega_laudo_dias.label }}</label>{{ fs_form.prazo_entrega_laudo_dias }}</div>
+          <div class="form-group"><label>{{ fs_form.remoto.label }}</label>{{ fs_form.remoto }}</div>
+          <div class="form-group full"><label>{{ fs_form.observacoes.label }}</label>{{ fs_form.observacoes }}</div>
+          {% for hidden in fs_form.hidden_fields %}{{ hidden }}{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if form.errors or formset.errors %}
+  <div class="card" style="border-color:#e0ced7;margin-bottom:1rem">
+    <h3 style="color:var(--color-error);margin-bottom:.5rem">Corrija os erros abaixo:</h3>
+    {{ form.errors }}{{ formset.errors }}
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:.75rem;margin-top:1rem">
+    <button type="submit" class="btn btn-primary">✔ Confirmar Cadastro</button>
+    <a href="{% url 'cadastro:contrato_upload' %}" class="btn btn-secondary">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

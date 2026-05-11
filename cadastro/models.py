@@ -127,3 +127,56 @@ class ServicoContratado(models.Model):
     @property
     def valor_total_estimado_mes(self):
         return self.quantidade_estimada_mes * self.valor_unitario
+
+
+class StatusImportacao(models.TextChoices):
+    PENDENTE = "pendente", "Pendente de revisão"
+    CONFIRMADO = "confirmado", "Confirmado e cadastrado"
+    ERRO = "erro", "Erro na extração"
+    IGNORADO = "ignorado", "Ignorado"
+
+
+class ContratoUpload(models.Model):
+    """Armazena um PDF de contrato enviado e os dados extraídos automaticamente."""
+    arquivo = models.FileField("Arquivo PDF", upload_to="contratos_pdf/%Y/%m/")
+    nome_arquivo = models.CharField(max_length=255, editable=False)
+    enviado_em = models.DateTimeField(auto_now_add=True)
+
+    # Dados extraídos
+    razao_social_extraida = models.CharField("Razão Social (extraída)", max_length=300, blank=True)
+    cnpj_extraido = models.CharField("CNPJ (extraído)", max_length=18, blank=True)
+    objeto_extraido = models.TextField("Objeto do Contrato (extraído)", blank=True)
+    servicos_extraidos = models.JSONField("Serviços (extraídos)", default=list, blank=True)
+    especialidade_extraida = models.CharField("Especialidade (extraída)", max_length=200, blank=True)
+    data_inicio_extraida = models.DateField("Data de Início (extraída)", null=True, blank=True)
+    data_fim_extraida = models.DateField("Data Fim (extraída)", null=True, blank=True)
+    meses_vigencia_extraidos = models.PositiveSmallIntegerField("Meses de Vigência", default=0)
+    valor_mensal_extraido = models.DecimalField("Valor Mensal (extraído)", max_digits=12, decimal_places=2, default=0)
+    valor_global_extraido = models.DecimalField("Valor Global (extraído)", max_digits=14, decimal_places=2, default=0)
+    numero_processo_extraido = models.CharField("Nº do Processo (extraído)", max_length=50, blank=True)
+    erro_extracao = models.TextField("Erro de Extração", blank=True)
+
+    # Vínculo com prestador após confirmação
+    prestador = models.ForeignKey(
+        Prestador, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="contratos_importados",
+        verbose_name="Prestador vinculado"
+    )
+    status = models.CharField(
+        "Status", max_length=20,
+        choices=StatusImportacao.choices,
+        default=StatusImportacao.PENDENTE
+    )
+
+    class Meta:
+        verbose_name = "Contrato Importado"
+        verbose_name_plural = "Contratos Importados"
+        ordering = ["-enviado_em"]
+
+    def __str__(self):
+        return f"{self.nome_arquivo} ({self.get_status_display()})"
+
+    def save(self, *args, **kwargs):
+        if self.arquivo and not self.nome_arquivo:
+            self.nome_arquivo = self.arquivo.name.split("/")[-1]
+        super().save(*args, **kwargs)
