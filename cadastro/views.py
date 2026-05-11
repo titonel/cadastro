@@ -6,7 +6,7 @@ from .forms import PrestadorForm, ServicoFormSet, UploadContratoForm
 from .extrator import extrair_contrato
 
 
-# ─── Prestadores ────────────────────────────────────────────────────────────
+# ─── Prestadores ────────────────────────────────────────────────────────────────────────────
 
 def prestador_list(request):
     qs = Prestador.objects.prefetch_related("especialidades", "servicos")
@@ -99,7 +99,7 @@ def prestador_delete(request, pk):
     return render(request, "cadastro/prestador_confirm_delete.html", {"prestador": prestador})
 
 
-# ─── Upload / Importação de Contratos ───────────────────────────────────────
+# ─── Upload / Importação de Contratos ─────────────────────────────────────────────────────
 
 def contrato_upload(request):
     """Recebe o PDF, extrai os dados e redireciona para a tela de revisão."""
@@ -110,7 +110,6 @@ def contrato_upload(request):
             contrato.nome_arquivo = request.FILES["arquivo"].name
             contrato.save()
 
-            # Extração
             dados = extrair_contrato(contrato.arquivo.path)
 
             contrato.razao_social_extraida = dados["razao_social"]
@@ -125,16 +124,24 @@ def contrato_upload(request):
             contrato.valor_global_extraido = dados["valor_global"]
             contrato.numero_processo_extraido = dados["numero_processo"]
             contrato.erro_extracao = dados["erro"] or ""
+            # Armazena representante legal extraído para uso na revisão
+            contrato._nome_representante = dados.get("nome_representante", "")
+            contrato._cpf_representante = dados.get("cpf_representante", "")
 
             if dados["erro"]:
                 contrato.status = StatusImportacao.ERRO
             contrato.save()
 
+            # Passa os dados do representante via session para a próxima view
+            request.session[f"rep_{contrato.pk}"] = {
+                "nome": dados.get("nome_representante", ""),
+                "cpf": dados.get("cpf_representante", ""),
+            }
+
             return redirect("cadastro:contrato_revisao", pk=contrato.pk)
     else:
         form = UploadContratoForm()
 
-    # Lista de importações anteriores
     importacoes = ContratoUpload.objects.all()[:20]
     return render(request, "cadastro/contrato_upload.html", {"form": form, "importacoes": importacoes})
 
@@ -143,13 +150,17 @@ def contrato_revisao(request, pk):
     """Exibe os dados extraídos para revisão. Permite confirmar e criar o Prestador."""
     contrato = get_object_or_404(ContratoUpload, pk=pk)
 
-    # Pré-preenche o form com os dados extraídos
+    # Recupera dados do representante armazenados na sessão
+    rep = request.session.pop(f"rep_{contrato.pk}", {})
+
     initial = {
         "nome_empresa": contrato.razao_social_extraida,
         "cnpj": contrato.cnpj_extraido,
         "data_inicio_contrato": contrato.data_inicio_extraida,
         "data_fim_contrato": contrato.data_fim_extraida,
         "numero_processo": contrato.numero_processo_extraido,
+        "nome_representante": rep.get("nome", ""),
+        "cpf_representante": rep.get("cpf", ""),
     }
 
     if request.method == "POST":
@@ -169,7 +180,6 @@ def contrato_revisao(request, pk):
             return redirect("cadastro:prestador_detail", pk=prestador.pk)
     else:
         form = PrestadorForm(initial=initial)
-        # Pré-preenche o formset com os serviços extraídos
         formset = ServicoFormSet()
 
     return render(request, "cadastro/contrato_revisao.html", {
