@@ -1,5 +1,5 @@
 """
-Producao SIRESP — parser de arquivo XLS exportado do portal SIRESP.
+Producao SIRESP — parser de arquivo XLS/XLSX exportado do portal SIRESP.
 
 Estrutura esperada:
   B2  : "Período:DD-MM-AAAAaDD-MM-AAAA"
@@ -9,15 +9,18 @@ Estrutura esperada:
 Regras de identificação na coluna A:
   - Nome da agenda  → Title Case (ex: "Oftalmologia - Catarata")
   - Nome do médico  → UPPER CASE  (ex: "JOAO DA SILVA")
-  - "Total Geral"   → linha de rodapé — ignorada e encerra o processamento
+  - "Total Geral"   → linha de rodapé — encerra o processamento
   - Demais linhas de total/subtotal/rodapé → ignoradas
+
+Dependencia: openpyxl (suporta .xlsx e .xlsm; para .xls legado use xlrd<=1.2.0)
 """
 
+import io
 import re
 from datetime import date, datetime
 from typing import Optional
 
-import xlrd
+import openpyxl
 
 from .models import (
     UploadProducao, ProducaoAgenda, ProducaoMedico,
@@ -105,6 +108,14 @@ def _parse_date(s: str) -> Optional[date]:
         return None
 
 
+def _cell_str(cell) -> str:
+    """Retorna o valor de uma célula openpyxl como string limpa."""
+    val = cell.value
+    if val is None:
+        return ""
+    return str(val).strip()
+
+
 def _safe_int(value) -> int:
     try:
         return int(float(str(value).replace(",", ".").strip()))
@@ -120,7 +131,7 @@ def _safe_float(value) -> float:
 
 
 def _eh_total_geral(texto: str) -> bool:
-    """Retorna True se a linha é a linha de rodapé 'Total Geral' — deve ser ignorada."""
+    """Retorna True se a linha é o rodapé 'Total Geral' — encerra o processamento."""
     return texto.strip().lower() == "total geral"
 
 
@@ -130,7 +141,7 @@ def _eh_agenda(texto: str) -> bool:
     - Começa com letra maiúscula
     - Não está inteiramente em maiúsculas (não é médico)
     - Tem ao menos 3 caracteres
-    - Não é uma linha de total/subtotal/rodapé
+    - Não é linha de total/subtotal/rodapé
     """
     if not texto or len(texto) < 3:
         return False
@@ -143,13 +154,11 @@ def _eh_agenda(texto: str) -> bool:
     for p in palavras_descarte:
         if lower.startswith(p):
             return False
-    # Médico: totalmente em maiúsculas (exceto espaços e pontuação)
     letras = [c for c in texto if c.isalpha()]
     if not letras:
         return False
     if all(c.isupper() for c in letras):
         return False  # é médico
-    # Agenda: primeira letra maiúscula, restante misto
     return letras[0].isupper()
 
 
@@ -164,16 +173,20 @@ def _eh_medico(texto: str) -> bool:
     return all(c.isupper() for c in letras)
 
 
-def _extrair_linha(sheet, row_idx: int) -> dict:
-    """Extrai os valores de uma linha do XLS e mapeia aos nomes de campo."""
+def _extrair_linha(row, n_colunas: int) -> dict:
+    """
+    Extrai os valores de uma linha openpyxl (tupla de células)
+    e mapeia aos nomes de campo definidos em COLUNAS_SIRESP.
+    """
     campos = {}
-    n_colunas = min(len(COLUNAS_SIRESP), sheet.ncols)
-    for col_idx in range(n_colunas):
+    for col_idx in range(min(n_colunas, len(row))):
         nome = COLUNAS_SIRESP[col_idx]
-        raw = sheet.cell_value(row_idx, col_idx)
-        if isinstance(raw, str):
-            raw = raw.strip()
-        campos[nome] = raw
+        val = row[col_idx].value
+        if val is None:
+            val = ""
+        elif isinstance(val, str):
+            val = val.strip()
+        campos[nome] = val
     return campos
 
 
@@ -201,7 +214,7 @@ def _preencher_campos_numericos(obj, dados: dict):
 
 def processar_upload(upload_id: int) -> None:
     """
-    Lê o XLS associado ao UploadProducao e persiste
+    Lê o XLSX associado ao UploadProducao e persiste
     ProducaoAgenda + ProducaoMedico no banco.
 
     Levanta exceções — o chamador deve capturar e registrar
@@ -209,13 +222,13 @@ def processar_upload(upload_id: int) -> None:
     """
     upload = UploadProducao.objects.get(pk=upload_id)
 
-    # Abre o workbook a partir do campo FileField
+    # Abre o workbook com openpyxl (data_only=True lê valores calculados, não fórmulas)
     conteudo = upload.arquivo.read()
-    wb = xlrd.open_workbook(file_contents=conteudo)
-    sheet = wb.sheets()[0]
+    wb = openpyxl.load_workbook(filename=io.BytesIO(conteudo), data_only=True)
+    sheet = wb.active
 
-    # — Extrai período da célula B2 (row=1, col=1) —
-    celula_b2 = str(sheet.cell_value(1, 1)).strip()
+    # — Extrai período da célula B2 —
+    celula_b2 = _cell_str(sheet["B2"])
     match = _PERIODO_RE.search(celula_b2)
     if match:
         upload.data_inicio_periodo = _parse_date(match.group(1))
@@ -224,13 +237,15 @@ def processar_upload(upload_id: int) -> None:
     # — Limpa dados anteriores deste upload —
     upload.agendas.all().delete()
 
-    # — Percorre as linhas a partir da linha 10 (índice 9) —
+    # — Percorre as linhas a partir da linha 10 (min_row=10) —
+    # iter_rows devolve tuplas de células; values_only=False para acessar .value
     agenda_obj: Optional[ProducaoAgenda] = None
     total_agendas = 0
     total_medicos = 0
+    n_colunas = len(COLUNAS_SIRESP)
 
-    for row_idx in range(9, sheet.nrows):
-        col_a = str(sheet.cell_value(row_idx, 0)).strip()
+    for row in sheet.iter_rows(min_row=10, max_col=n_colunas):
+        col_a = _cell_str(row[0])
         if not col_a:
             continue
 
@@ -238,10 +253,9 @@ def processar_upload(upload_id: int) -> None:
         if _eh_total_geral(col_a):
             break
 
-        dados = _extrair_linha(sheet, row_idx)
+        dados = _extrair_linha(row, n_colunas)
 
         if _eh_agenda(col_a):
-            # Cria ou atualiza a ProducaoAgenda
             agenda_obj, _ = ProducaoAgenda.objects.get_or_create(
                 upload=upload,
                 nome_agenda=col_a,
@@ -251,7 +265,6 @@ def processar_upload(upload_id: int) -> None:
             total_agendas += 1
 
         elif _eh_medico(col_a) and agenda_obj is not None:
-            # Cria ProducaoMedico vinculada à agenda corrente
             medico_obj = ProducaoMedico(
                 agenda=agenda_obj,
                 nome_medico=col_a,
