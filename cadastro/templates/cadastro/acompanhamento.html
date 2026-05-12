@@ -1,0 +1,391 @@
+{% extends "cadastro/base.html" %}
+
+{% block title %}Acompanhamento de Produção — AME Caraguatatuba{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Upload cards ── */
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  @media (max-width: 768px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .upload-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .upload-card-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    background: #f7f6f2;
+  }
+
+  .upload-card-header .icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+  }
+  .icon-consulta  { background: #cedcd8; color: #0f3638; }
+  .icon-cirurgia  { background: #e9e0c6; color: #8a5b00; }
+
+  .upload-card-header .title {
+    font-weight: 700;
+    font-size: .9375rem;
+  }
+  .upload-card-header .subtitle {
+    font-size: .8125rem;
+    color: var(--color-text-muted);
+    margin-top: .1rem;
+  }
+
+  .upload-card-body { padding: 1.25rem; }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.75rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    position: relative;
+  }
+  .drop-zone:hover,
+  .drop-zone.dragover {
+    border-color: var(--color-primary);
+    background: #f0f7f7;
+  }
+  .drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-zone-icon { font-size: 2rem; margin-bottom: .5rem; }
+  .drop-zone-text { font-size: .875rem; color: var(--color-text-muted); }
+  .drop-zone-text strong { color: var(--color-primary); }
+  .drop-zone-hint { font-size: .75rem; color: var(--color-text-muted); margin-top: .35rem; }
+  .drop-zone.has-file { border-color: var(--color-success); background: #f4f8f1; }
+  .drop-zone.has-file .drop-zone-text { color: var(--color-success); font-weight: 600; }
+
+  /* Submit row */
+  .upload-submit { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
+
+  /* ── Histórico de uploads ── */
+  .section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    border-bottom: 2px solid var(--color-primary);
+    padding-bottom: .35rem;
+    margin-bottom: 1rem;
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--color-border);
+    margin-bottom: 1.25rem;
+  }
+  .tab-btn {
+    padding: .55rem 1.25rem;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .tab-btn.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .empty-state {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: var(--color-text-muted);
+    font-size: .875rem;
+  }
+  .empty-state-icon { font-size: 2rem; margin-bottom: .5rem; }
+
+  /* status badges reutilizando as classes do base */
+  .status-confirmado { background: #d4dfcc; color: #1e3f0a; }
+  .status-pendente   { background: #e9e0c6; color: #8a5b00; }
+  .status-erro       { background: #e0ced7; color: #561740; }
+  .status-ignorado   { background: #edeae5; color: #7a7974; }
+</style>
+
+<div class="page-header">
+  <h1 class="page-title">📊 Acompanhamento de Produção</h1>
+  <a href="{% url 'cadastro:home' %}" class="btn btn-secondary btn-sm">← Voltar</a>
+</div>
+
+{# ── Mensagens de feedback ── #}
+{% if messages %}
+<ul class="messages">
+  {% for msg in messages %}
+  <li class="{{ msg.tags }}">{{ msg }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{# ════════════════════════════════════════════
+   ÁREA DE UPLOAD
+   ════════════════════════════════════════════ #}
+<div class="upload-grid">
+
+  {# — Card: Consultas — #}
+  <div class="upload-card">
+    <div class="upload-card-header">
+      <div class="icon icon-consulta">🩺</div>
+      <div>
+        <div class="title">Produção de Consultas</div>
+        <div class="subtitle">Relatório XLS de consultas ambulatoriais (SIRESP)</div>
+      </div>
+    </div>
+    <div class="upload-card-body">
+      <form method="post" enctype="multipart/form-data" id="form-consulta">
+        {% csrf_token %}
+        <input type="hidden" name="tipo" value="consulta">
+
+        <div class="drop-zone" id="dz-consulta">
+          <input
+            type="file"
+            name="arquivo_producao"
+            accept=".xls,.xlsx"
+            id="file-consulta"
+            aria-label="Selecionar arquivo XLS de consultas"
+          >
+          <div class="drop-zone-icon">📂</div>
+          <div class="drop-zone-text">
+            <strong>Clique para selecionar</strong> ou arraste o arquivo aqui
+          </div>
+          <div class="drop-zone-hint">Formatos aceitos: .xls, .xlsx</div>
+        </div>
+
+        <div class="upload-submit">
+          <button type="submit" class="btn btn-primary">
+            ⬆ Importar Consultas
+          </button>
+          <span id="nome-consulta" style="font-size:.8125rem;color:var(--color-text-muted);"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# — Card: Cirurgias / Exames — #}
+  <div class="upload-card">
+    <div class="upload-card-header">
+      <div class="icon icon-cirurgia">🔬</div>
+      <div>
+        <div class="title">Produção de Cirurgias / Exames</div>
+        <div class="subtitle">Relatório XLS de cirurgias e exames (SIRESP)</div>
+      </div>
+    </div>
+    <div class="upload-card-body">
+      <form method="post" enctype="multipart/form-data" id="form-cirurgia">
+        {% csrf_token %}
+        <input type="hidden" name="tipo" value="cirurgia_exame">
+
+        <div class="drop-zone" id="dz-cirurgia">
+          <input
+            type="file"
+            name="arquivo_producao"
+            accept=".xls,.xlsx"
+            id="file-cirurgia"
+            aria-label="Selecionar arquivo XLS de cirurgias e exames"
+          >
+          <div class="drop-zone-icon">📂</div>
+          <div class="drop-zone-text">
+            <strong>Clique para selecionar</strong> ou arraste o arquivo aqui
+          </div>
+          <div class="drop-zone-hint">Formatos aceitos: .xls, .xlsx</div>
+        </div>
+
+        <div class="upload-submit">
+          <button type="submit" class="btn btn-warning">
+            ⬆ Importar Cirurgias/Exames
+          </button>
+          <span id="nome-cirurgia" style="font-size:.8125rem;color:var(--color-text-muted);"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>{# /upload-grid #}
+
+{# ════════════════════════════════════════════
+   HISTÓRICO DE IMPORTAÇÕES
+   ════════════════════════════════════════════ #}
+<div class="card">
+  <div class="section-title">Histórico de Importações</div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-target="tab-consultas">🩺 Consultas</button>
+    <button class="tab-btn" data-target="tab-cirurgias">🔬 Cirurgias / Exames</button>
+  </div>
+
+  {# Tab: Consultas #}
+  <div class="tab-panel active" id="tab-consultas">
+    {% if uploads_consulta %}
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Arquivo</th>
+            <th>Período</th>
+            <th>Agendas</th>
+            <th>Médicos</th>
+            <th>Enviado em</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for up in uploads_consulta %}
+          <tr>
+            <td>{{ up.nome_arquivo }}</td>
+            <td>{{ up.periodo_display }}</td>
+            <td style="text-align:center;">{{ up.total_agendas }}</td>
+            <td style="text-align:center;">{{ up.total_medicos }}</td>
+            <td>{{ up.enviado_em|date:"d/m/Y H:i" }}</td>
+            <td>
+              <span class="badge status-{{ up.status }}">
+                {{ up.get_status_display }}
+              </span>
+              {% if up.erro_processamento %}
+              <div style="font-size:.75rem;color:#a12c7b;margin-top:.25rem;">
+                {{ up.erro_processamento|truncatechars:80 }}
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      Nenhum arquivo de consultas importado ainda.
+    </div>
+    {% endif %}
+  </div>
+
+  {# Tab: Cirurgias/Exames #}
+  <div class="tab-panel" id="tab-cirurgias">
+    {% if uploads_cirurgia %}
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Arquivo</th>
+            <th>Período</th>
+            <th>Agendas</th>
+            <th>Médicos</th>
+            <th>Enviado em</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for up in uploads_cirurgia %}
+          <tr>
+            <td>{{ up.nome_arquivo }}</td>
+            <td>{{ up.periodo_display }}</td>
+            <td style="text-align:center;">{{ up.total_agendas }}</td>
+            <td style="text-align:center;">{{ up.total_medicos }}</td>
+            <td>{{ up.enviado_em|date:"d/m/Y H:i" }}</td>
+            <td>
+              <span class="badge status-{{ up.status }}">
+                {{ up.get_status_display }}
+              </span>
+              {% if up.erro_processamento %}
+              <div style="font-size:.75rem;color:#a12c7b;margin-top:.25rem;">
+                {{ up.erro_processamento|truncatechars:80 }}
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      Nenhum arquivo de cirurgias/exames importado ainda.
+    </div>
+    {% endif %}
+  </div>
+
+</div>{# /card histórico #}
+
+<script>
+/* ── Drop zone feedback ── */
+function initDropZone(dzId, fileId, labelId) {
+  const dz = document.getElementById(dzId);
+  const input = document.getElementById(fileId);
+  const label = document.getElementById(labelId);
+  if (!dz || !input) return;
+
+  input.addEventListener('change', () => {
+    const name = input.files[0] ? input.files[0].name : '';
+    if (name) {
+      dz.classList.add('has-file');
+      dz.querySelector('.drop-zone-text').innerHTML =
+        `<strong>✔ Arquivo selecionado:</strong> ${name}`;
+      if (label) label.textContent = '';
+    }
+  });
+
+  ['dragover', 'dragenter'].forEach(ev => {
+    dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    dz.addEventListener(ev, () => dz.classList.remove('dragover'));
+  });
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+}
+
+initDropZone('dz-consulta',  'file-consulta',  'nome-consulta');
+initDropZone('dz-cirurgia',  'file-cirurgia',  'nome-cirurgia');
+
+/* ── Tabs ── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.target).classList.add('active');
+  });
+});
+</script>
+{% endblock %}

@@ -187,3 +187,181 @@ class ContratoUpload(models.Model):
         if self.arquivo and not self.nome_arquivo:
             self.nome_arquivo = self.arquivo.name.split("/")[-1]
         super().save(*args, **kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Módulo: Produção SIRESP
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TipoRelatorioProducao(models.TextChoices):
+    CONSULTA = "consulta", "Consultas"
+    CIRURGIA_EXAME = "cirurgia_exame", "Cirurgias / Exames"
+
+
+class UploadProducao(models.Model):
+    """Registro de cada arquivo XLS do SIRESP enviado para importação."""
+    arquivo = models.FileField("Arquivo XLS", upload_to="producao_xls/%Y/%m/")
+    nome_arquivo = models.CharField(max_length=255, editable=False)
+    tipo = models.CharField(
+        "Tipo de Relatório",
+        max_length=20,
+        choices=TipoRelatorioProducao.choices,
+        default=TipoRelatorioProducao.CONSULTA,
+    )
+    data_inicio_periodo = models.DateField("Início do Período", null=True, blank=True)
+    data_fim_periodo = models.DateField("Fim do Período", null=True, blank=True)
+    enviado_em = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        "Status",
+        max_length=20,
+        choices=StatusImportacao.choices,
+        default=StatusImportacao.PENDENTE,
+    )
+    erro_processamento = models.TextField("Erro de Processamento", blank=True)
+    total_agendas = models.PositiveIntegerField("Total de Agendas", default=0)
+    total_medicos = models.PositiveIntegerField("Total de Registros de Médicos", default=0)
+
+    class Meta:
+        verbose_name = "Upload de Produção"
+        verbose_name_plural = "Uploads de Produção"
+        ordering = ["-enviado_em"]
+
+    def __str__(self):
+        return f"{self.nome_arquivo} ({self.get_tipo_display()}) — {self.get_status_display()}"
+
+    def save(self, *args, **kwargs):
+        if self.arquivo and not self.nome_arquivo:
+            import os
+            self.nome_arquivo = os.path.basename(self.arquivo.name)
+        super().save(*args, **kwargs)
+
+    @property
+    def periodo_display(self):
+        if self.data_inicio_periodo and self.data_fim_periodo:
+            return f"{self.data_inicio_periodo.strftime('%d/%m/%Y')} a {self.data_fim_periodo.strftime('%d/%m/%Y')}"
+        return "—"
+
+
+# Mapeamento das colunas do SIRESP (índice 0-based a partir da coluna A)
+COLUNAS_SIRESP = [
+    "especialidade_medica",      # A  (0)
+    "vagas_ofertadas",           # B  (1)
+    "agend_totais",              # C  (2)
+    "agend_totais_pct",          # D  (3)
+    "agend_bolsao",              # E  (4)
+    "agend_bolsao_pct",          # F  (5)
+    "nao_distribuidas",          # G  (6)
+    "nao_distribuidas_pct",      # H  (7)
+    "cota",                      # I  (8)
+    "cota_pct",                  # J  (9)
+    "extra",                     # K  (10)
+    "extra_pct",                 # L  (11)
+    "total_geral",               # M  (12)
+    "presencial",                # N  (13)
+    "presencial_pct",            # O  (14)
+    "teleconsulta",              # P  (15)
+    "teleconsulta_pct",          # Q  (16)
+    "agend_totais_2",            # R  (17)
+    "agend_totais_2_pct",        # S  (18)
+    "recepcao_ausente",          # T  (19)
+    "recepcao_ausente_pct",      # U  (20)
+    "recepcao_dispensado",       # V  (21)
+    "recepcao_dispensado_pct",   # W  (22)
+    "recepcao_desistente",       # X  (23)
+    "recepcao_desistente_pct",   # Y  (24)
+    "recepcao_nao_informado",    # Z  (25)
+    "recepcao_nao_informado_pct",# AA (26)
+    "alta",                      # AB (27)
+    "alta_pct",                  # AC (28)
+]
+
+
+class ProducaoAgenda(models.Model):
+    """Produção consolidada de uma agenda (especialidade) em um período."""
+    upload = models.ForeignKey(
+        UploadProducao, on_delete=models.CASCADE, related_name="agendas"
+    )
+    nome_agenda = models.CharField("Nome da Agenda", max_length=200)
+
+    vagas_ofertadas = models.IntegerField(default=0)
+    agend_totais = models.IntegerField(default=0)
+    agend_totais_pct = models.FloatField(default=0)
+    agend_bolsao = models.IntegerField(default=0)
+    agend_bolsao_pct = models.FloatField(default=0)
+    nao_distribuidas = models.IntegerField(default=0)
+    nao_distribuidas_pct = models.FloatField(default=0)
+    cota = models.IntegerField(default=0)
+    cota_pct = models.FloatField(default=0)
+    extra = models.IntegerField(default=0)
+    extra_pct = models.FloatField(default=0)
+    total_geral = models.IntegerField(default=0)
+    presencial = models.IntegerField(default=0)
+    presencial_pct = models.FloatField(default=0)
+    teleconsulta = models.IntegerField(default=0)
+    teleconsulta_pct = models.FloatField(default=0)
+    agend_totais_2 = models.IntegerField(default=0)
+    agend_totais_2_pct = models.FloatField(default=0)
+    recepcao_ausente = models.IntegerField(default=0)
+    recepcao_ausente_pct = models.FloatField(default=0)
+    recepcao_dispensado = models.IntegerField(default=0)
+    recepcao_dispensado_pct = models.FloatField(default=0)
+    recepcao_desistente = models.IntegerField(default=0)
+    recepcao_desistente_pct = models.FloatField(default=0)
+    recepcao_nao_informado = models.IntegerField(default=0)
+    recepcao_nao_informado_pct = models.FloatField(default=0)
+    alta = models.IntegerField(default=0)
+    alta_pct = models.FloatField(default=0)
+
+    class Meta:
+        verbose_name = "Produção por Agenda"
+        verbose_name_plural = "Produções por Agenda"
+        ordering = ["nome_agenda"]
+        unique_together = [("upload", "nome_agenda")]
+
+    def __str__(self):
+        return f"{self.nome_agenda} — {self.upload}"
+
+
+class ProducaoMedico(models.Model):
+    """Produção individual de um médico dentro de uma agenda em um período."""
+    agenda = models.ForeignKey(
+        ProducaoAgenda, on_delete=models.CASCADE, related_name="medicos"
+    )
+    nome_medico = models.CharField("Nome do Médico", max_length=200)
+
+    vagas_ofertadas = models.IntegerField(default=0)
+    agend_totais = models.IntegerField(default=0)
+    agend_totais_pct = models.FloatField(default=0)
+    agend_bolsao = models.IntegerField(default=0)
+    agend_bolsao_pct = models.FloatField(default=0)
+    nao_distribuidas = models.IntegerField(default=0)
+    nao_distribuidas_pct = models.FloatField(default=0)
+    cota = models.IntegerField(default=0)
+    cota_pct = models.FloatField(default=0)
+    extra = models.IntegerField(default=0)
+    extra_pct = models.FloatField(default=0)
+    total_geral = models.IntegerField(default=0)
+    presencial = models.IntegerField(default=0)
+    presencial_pct = models.FloatField(default=0)
+    teleconsulta = models.IntegerField(default=0)
+    teleconsulta_pct = models.FloatField(default=0)
+    agend_totais_2 = models.IntegerField(default=0)
+    agend_totais_2_pct = models.FloatField(default=0)
+    recepcao_ausente = models.IntegerField(default=0)
+    recepcao_ausente_pct = models.FloatField(default=0)
+    recepcao_dispensado = models.IntegerField(default=0)
+    recepcao_dispensado_pct = models.FloatField(default=0)
+    recepcao_desistente = models.IntegerField(default=0)
+    recepcao_desistente_pct = models.FloatField(default=0)
+    recepcao_nao_informado = models.IntegerField(default=0)
+    recepcao_nao_informado_pct = models.FloatField(default=0)
+    alta = models.IntegerField(default=0)
+    alta_pct = models.FloatField(default=0)
+
+    class Meta:
+        verbose_name = "Produção por Médico"
+        verbose_name_plural = "Produções por Médico"
+        ordering = ["nome_medico"]
+
+    def __str__(self):
+        return f"{self.nome_medico} — {self.agenda.nome_agenda}"

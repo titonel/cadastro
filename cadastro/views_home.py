@@ -1,10 +1,14 @@
 import io
 from datetime import date
 
+from django.contrib import messages
 from django.http import HttpResponse
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 
-from .models import Prestador, Especialidade, ContratoUpload
+from .models import (
+    Prestador, Especialidade, ContratoUpload,
+    UploadProducao, TipoRelatorioProducao, StatusImportacao,
+)
 from .relatorio_producao import criar_relatorio
 
 
@@ -19,8 +23,61 @@ def home(request):
 
 
 def acompanhamento(request):
-    """Módulo de acompanhamento de produção — em construção."""
-    return render(request, "cadastro/acompanhamento.html", {})
+    """Módulo de acompanhamento de produção — upload de XLS do SIRESP."""
+    if request.method == "POST":
+        arquivo = request.FILES.get("arquivo_producao")
+        tipo = request.POST.get("tipo", TipoRelatorioProducao.CONSULTA)
+
+        if not arquivo:
+            messages.error(request, "Nenhum arquivo selecionado.")
+            return redirect("cadastro:acompanhamento")
+
+        ext = arquivo.name.rsplit(".", 1)[-1].lower()
+        if ext not in ("xls", "xlsx"):
+            messages.error(request, "Formato inválido. Envie um arquivo .xls ou .xlsx.")
+            return redirect("cadastro:acompanhamento")
+
+        upload = UploadProducao(
+            arquivo=arquivo,
+            tipo=tipo,
+            status=StatusImportacao.PENDENTE,
+        )
+        upload.save()
+
+        # Processa imediatamente
+        try:
+            from .producao_siresp import processar_upload
+            processar_upload(upload.pk)
+            messages.success(
+                request,
+                f"Arquivo importado com sucesso: "
+                f"{upload.total_agendas} agenda(s) e "
+                f"{upload.total_medicos} registro(s) de médico(s) processados. "
+                f"Período: {upload.periodo_display}.",
+            )
+        except Exception as exc:
+            upload.status = StatusImportacao.ERRO
+            upload.erro_processamento = str(exc)
+            upload.save()
+            messages.error(request, f"Erro ao processar o arquivo: {exc}")
+
+        return redirect("cadastro:acompanhamento")
+
+    # GET — lista os uploads existentes
+    uploads_consulta = UploadProducao.objects.filter(
+        tipo=TipoRelatorioProducao.CONSULTA
+    ).order_by("-enviado_em")[:20]
+
+    uploads_cirurgia = UploadProducao.objects.filter(
+        tipo=TipoRelatorioProducao.CIRURGIA_EXAME
+    ).order_by("-enviado_em")[:20]
+
+    context = {
+        "uploads_consulta": uploads_consulta,
+        "uploads_cirurgia": uploads_cirurgia,
+        "tipo_choices": TipoRelatorioProducao.choices,
+    }
+    return render(request, "cadastro/acompanhamento.html", context)
 
 
 def indicadores(request):
@@ -56,7 +113,6 @@ def relatorio_download(request, pk):
     mes_ini = int(request.GET.get("mes", date.today().month))
     ano_ini = int(request.GET.get("ano", date.today().year))
 
-    # Monta lista de serviços a partir dos ServicoContratado vinculados
     servicos = []
     for s in prestador.servicos.all().order_by("tipo_servico", "descricao"):
         servicos.append({
@@ -65,10 +121,9 @@ def relatorio_download(request, pk):
             "agenda": "",
             "estimativa": s.quantidade_estimada_mes,
             "valor_unit": float(s.valor_unitario),
-            "producao": {},  # sem dados lançados: relatório em branco para preenchimento
+            "producao": {},
         })
 
-    # Fallback: se não há serviços cadastrados, cria um genérico
     if not servicos:
         especialidade_nome = (
             prestador.especialidades.first().nome
