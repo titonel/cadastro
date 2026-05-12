@@ -12,7 +12,13 @@ Regras de identificação na coluna A:
   - "Total Geral"   → linha de rodapé — encerra o processamento
   - Demais linhas de total/subtotal/rodapé → ignoradas
 
-Dependencia: openpyxl (suporta .xlsx e .xlsm; para .xls legado use xlrd<=1.2.0)
+Formatos suportados:
+  .xlsx / .xlsm  → openpyxl
+  .xls  (legado) → xlrd  (pip install xlrd==1.2.0)
+
+O formato é detectado automaticamente pelo cabeçalho binário do arquivo,
+não pela extensão, para evitar falhas quando o SIRESP salva .xls com
+conóteúdo OOXML ou vice-versa.
 """
 
 import io
@@ -21,13 +27,17 @@ from datetime import date, datetime
 from typing import Optional
 
 import openpyxl
+import xlrd
 
 from .models import (
     UploadProducao, ProducaoAgenda, ProducaoMedico,
     StatusImportacao, COLUNAS_SIRESP,
 )
 
-# Lista canônica de agendas para validação cruzada (opcional)
+# Assinatura binária do formato XLS legado (BIFF/Compound Document)
+_XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+# Lista canônica de agendas (para validação cruzada futura)
 AGENDAS_CONHECIDAS = {
     "Anestesiologia - Avaliação Pré-cirúrgica",
     "Cardiologia",
@@ -108,14 +118,6 @@ def _parse_date(s: str) -> Optional[date]:
         return None
 
 
-def _cell_str(cell) -> str:
-    """Retorna o valor de uma célula openpyxl como string limpa."""
-    val = cell.value
-    if val is None:
-        return ""
-    return str(val).strip()
-
-
 def _safe_int(value) -> int:
     try:
         return int(float(str(value).replace(",", ".").strip()))
@@ -136,13 +138,6 @@ def _eh_total_geral(texto: str) -> bool:
 
 
 def _eh_agenda(texto: str) -> bool:
-    """
-    Retorna True se o texto corresponde ao nome de uma agenda:
-    - Começa com letra maiúscula
-    - Não está inteiramente em maiúsculas (não é médico)
-    - Tem ao menos 3 caracteres
-    - Não é linha de total/subtotal/rodapé
-    """
     if not texto or len(texto) < 3:
         return False
     texto = texto.strip()
@@ -163,35 +158,15 @@ def _eh_agenda(texto: str) -> bool:
 
 
 def _eh_medico(texto: str) -> bool:
-    """Retorna True se todas as letras são maiúsculas (nome de médico)."""
     if not texto or len(texto) < 3:
         return False
-    texto = texto.strip()
-    letras = [c for c in texto if c.isalpha()]
+    letras = [c for c in texto.strip() if c.isalpha()]
     if not letras:
         return False
     return all(c.isupper() for c in letras)
 
 
-def _extrair_linha(row, n_colunas: int) -> dict:
-    """
-    Extrai os valores de uma linha openpyxl (tupla de células)
-    e mapeia aos nomes de campo definidos em COLUNAS_SIRESP.
-    """
-    campos = {}
-    for col_idx in range(min(n_colunas, len(row))):
-        nome = COLUNAS_SIRESP[col_idx]
-        val = row[col_idx].value
-        if val is None:
-            val = ""
-        elif isinstance(val, str):
-            val = val.strip()
-        campos[nome] = val
-    return campos
-
-
 def _preencher_campos_numericos(obj, dados: dict):
-    """Atribui os campos numéricos a uma instância de ProducaoAgenda ou ProducaoMedico."""
     campos_int = [
         "vagas_ofertadas", "agend_totais", "agend_bolsao", "nao_distribuidas",
         "cota", "extra", "total_geral", "presencial", "teleconsulta",
@@ -212,24 +187,91 @@ def _preencher_campos_numericos(obj, dados: dict):
             setattr(obj, campo, _safe_float(dados[campo]))
 
 
+# ---------------------------------------------------------------------------
+# Adaptadores de formato — normalizam a API de leitura para XLS e XLSX
+# ---------------------------------------------------------------------------
+
+class _SheetXlsx:
+    """Wrapper sobre openpyxl worksheet para uso no loop principal."""
+
+    def __init__(self, ws):
+        self._ws = ws
+        self.n_colunas = len(COLUNAS_SIRESP)
+
+    def cell_b2(self) -> str:
+        val = self._ws["B2"].value
+        return str(val).strip() if val is not None else ""
+
+    def iter_linhas(self):
+        """Itera sobre linhas a partir da linha 10; cada item é dict campo→valor."""
+        for row in self._ws.iter_rows(min_row=10, max_col=self.n_colunas):
+            dados = {}
+            for col_idx, cell in enumerate(row[:self.n_colunas]):
+                nome = COLUNAS_SIRESP[col_idx]
+                val = cell.value
+                if val is None:
+                    val = ""
+                elif isinstance(val, str):
+                    val = val.strip()
+                dados[nome] = val
+            yield dados
+
+
+class _SheetXls:
+    """Wrapper sobre xlrd sheet para uso no loop principal."""
+
+    def __init__(self, sheet):
+        self._sheet = sheet
+        self.n_colunas = len(COLUNAS_SIRESP)
+
+    def cell_b2(self) -> str:
+        return str(self._sheet.cell_value(1, 1)).strip()
+
+    def iter_linhas(self):
+        """Itera sobre linhas a partir da linha 10 (row_idx=9); cada item é dict campo→valor."""
+        sheet = self._sheet
+        n = min(self.n_colunas, sheet.ncols)
+        for row_idx in range(9, sheet.nrows):
+            dados = {}
+            for col_idx in range(n):
+                nome = COLUNAS_SIRESP[col_idx]
+                raw = sheet.cell_value(row_idx, col_idx)
+                if isinstance(raw, str):
+                    raw = raw.strip()
+                dados[nome] = raw
+            yield dados
+
+
+def _abrir_sheet(conteudo: bytes):
+    """
+    Detecta o formato pelo cabeçalho binário e retorna o wrapper correto.
+    XLS (BIFF): primeiros 8 bytes == _XLS_MAGIC  → _SheetXls
+    Qualquer outro caso                           → _SheetXlsx (ZIP/OOXML)
+    """
+    if conteudo[:8] == _XLS_MAGIC:
+        wb = xlrd.open_workbook(file_contents=conteudo)
+        return _SheetXls(wb.sheets()[0])
+    else:
+        wb = openpyxl.load_workbook(filename=io.BytesIO(conteudo), data_only=True)
+        return _SheetXlsx(wb.active)
+
+
+# ---------------------------------------------------------------------------
+# Função principal
+# ---------------------------------------------------------------------------
+
 def processar_upload(upload_id: int) -> None:
     """
-    Lê o XLSX associado ao UploadProducao e persiste
+    Lê o arquivo (XLS ou XLSX) associado ao UploadProducao e persiste
     ProducaoAgenda + ProducaoMedico no banco.
-
-    Levanta exceções — o chamador deve capturar e registrar
-    o erro em upload.erro_processamento.
     """
     upload = UploadProducao.objects.get(pk=upload_id)
-
-    # Abre o workbook com openpyxl (data_only=True lê valores calculados, não fórmulas)
     conteudo = upload.arquivo.read()
-    wb = openpyxl.load_workbook(filename=io.BytesIO(conteudo), data_only=True)
-    sheet = wb.active
+
+    sheet = _abrir_sheet(conteudo)
 
     # — Extrai período da célula B2 —
-    celula_b2 = _cell_str(sheet["B2"])
-    match = _PERIODO_RE.search(celula_b2)
+    match = _PERIODO_RE.search(sheet.cell_b2())
     if match:
         upload.data_inicio_periodo = _parse_date(match.group(1))
         upload.data_fim_periodo = _parse_date(match.group(2))
@@ -237,23 +279,18 @@ def processar_upload(upload_id: int) -> None:
     # — Limpa dados anteriores deste upload —
     upload.agendas.all().delete()
 
-    # — Percorre as linhas a partir da linha 10 (min_row=10) —
-    # iter_rows devolve tuplas de células; values_only=False para acessar .value
+    # — Percorre as linhas a partir da linha 10 —
     agenda_obj: Optional[ProducaoAgenda] = None
     total_agendas = 0
     total_medicos = 0
-    n_colunas = len(COLUNAS_SIRESP)
 
-    for row in sheet.iter_rows(min_row=10, max_col=n_colunas):
-        col_a = _cell_str(row[0])
+    for dados in sheet.iter_linhas():
+        col_a = str(dados.get(COLUNAS_SIRESP[0], "")).strip()
         if not col_a:
             continue
 
-        # Linha de rodapé "Total Geral" — encerra o processamento
         if _eh_total_geral(col_a):
             break
-
-        dados = _extrair_linha(row, n_colunas)
 
         if _eh_agenda(col_a):
             agenda_obj, _ = ProducaoAgenda.objects.get_or_create(
