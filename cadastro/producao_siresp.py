@@ -9,7 +9,8 @@ Estrutura esperada:
 Regras de identificação na coluna A:
   - Nome da agenda  → Title Case (ex: "Oftalmologia - Catarata")
   - Nome do médico  → UPPER CASE  (ex: "JOAO DA SILVA")
-  - Linhas de total/rodapé → ignoradas
+  - "Total Geral"   → linha de rodapé — ignorada e encerra o processamento
+  - Demais linhas de total/subtotal/rodapé → ignoradas
 """
 
 import re
@@ -116,6 +117,11 @@ def _safe_float(value) -> float:
         return float(str(value).replace(",", ".").replace("%", "").strip())
     except (ValueError, TypeError):
         return 0.0
+
+
+def _eh_total_geral(texto: str) -> bool:
+    """Retorna True se a linha é a linha de rodapé 'Total Geral' — deve ser ignorada."""
+    return texto.strip().lower() == "total geral"
 
 
 def _eh_agenda(texto: str) -> bool:
@@ -227,6 +233,10 @@ def processar_upload(upload_id: int) -> None:
         col_a = str(sheet.cell_value(row_idx, 0)).strip()
         if not col_a:
             continue
+
+        # Linha de rodapé "Total Geral" — encerra o processamento
+        if _eh_total_geral(col_a):
+            break
 
         dados = _extrair_linha(sheet, row_idx)
 
