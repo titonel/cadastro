@@ -14,11 +14,14 @@ Regras de identificação na coluna A:
 
 Formatos suportados:
   .xlsx / .xlsm  → openpyxl
-  .xls  (legado) → xlrd  (pip install xlrd==1.2.0)
+  .xls  (legado) → xlrd  (pip install "xlrd==1.2.0")
 
 O formato é detectado automaticamente pelo cabeçalho binário do arquivo,
-não pela extensão, para evitar falhas quando o SIRESP salva .xls com
-conóteúdo OOXML ou vice-versa.
+não pela extensão.
+
+NOTA: upload.arquivo.read() após upload.save() retorna bytes vazios porque
+o Django já consumiu o stream ao gravar no disco. Por isso usamos
+upload.arquivo.open("rb") para reler do storage após o save.
 """
 
 import io
@@ -34,7 +37,7 @@ from .models import (
     StatusImportacao, COLUNAS_SIRESP,
 )
 
-# Assinatura binária do formato XLS legado (BIFF/Compound Document)
+# Assinatura binária do formato XLS legado (BIFF/OLE2 Compound Document)
 _XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 # Lista canônica de agendas (para validação cruzada futura)
@@ -188,11 +191,11 @@ def _preencher_campos_numericos(obj, dados: dict):
 
 
 # ---------------------------------------------------------------------------
-# Adaptadores de formato — normalizam a API de leitura para XLS e XLSX
+# Adaptadores de formato — interface uniforme para XLS e XLSX
 # ---------------------------------------------------------------------------
 
 class _SheetXlsx:
-    """Wrapper sobre openpyxl worksheet para uso no loop principal."""
+    """Wrapper sobre openpyxl worksheet."""
 
     def __init__(self, ws):
         self._ws = ws
@@ -203,7 +206,6 @@ class _SheetXlsx:
         return str(val).strip() if val is not None else ""
 
     def iter_linhas(self):
-        """Itera sobre linhas a partir da linha 10; cada item é dict campo→valor."""
         for row in self._ws.iter_rows(min_row=10, max_col=self.n_colunas):
             dados = {}
             for col_idx, cell in enumerate(row[:self.n_colunas]):
@@ -218,7 +220,7 @@ class _SheetXlsx:
 
 
 class _SheetXls:
-    """Wrapper sobre xlrd sheet para uso no loop principal."""
+    """Wrapper sobre xlrd sheet."""
 
     def __init__(self, sheet):
         self._sheet = sheet
@@ -228,7 +230,6 @@ class _SheetXls:
         return str(self._sheet.cell_value(1, 1)).strip()
 
     def iter_linhas(self):
-        """Itera sobre linhas a partir da linha 10 (row_idx=9); cada item é dict campo→valor."""
         sheet = self._sheet
         n = min(self.n_colunas, sheet.ncols)
         for row_idx in range(9, sheet.nrows):
@@ -245,8 +246,8 @@ class _SheetXls:
 def _abrir_sheet(conteudo: bytes):
     """
     Detecta o formato pelo cabeçalho binário e retorna o wrapper correto.
-    XLS (BIFF): primeiros 8 bytes == _XLS_MAGIC  → _SheetXls
-    Qualquer outro caso                           → _SheetXlsx (ZIP/OOXML)
+      XLS (BIFF): primeiros 8 bytes == _XLS_MAGIC  → _SheetXls
+      Qualquer outro caso                           → _SheetXlsx (ZIP/OOXML)
     """
     if conteudo[:8] == _XLS_MAGIC:
         wb = xlrd.open_workbook(file_contents=conteudo)
@@ -264,9 +265,16 @@ def processar_upload(upload_id: int) -> None:
     """
     Lê o arquivo (XLS ou XLSX) associado ao UploadProducao e persiste
     ProducaoAgenda + ProducaoMedico no banco.
+
+    IMPORTANTE: usa upload.arquivo.open("rb") para reler o arquivo do
+    storage após upload.save(), evitando o problema de stream já consumido.
     """
     upload = UploadProducao.objects.get(pk=upload_id)
-    conteudo = upload.arquivo.read()
+
+    # Reabre o arquivo do disco/storage (o stream original já foi consumido
+    # pelo Django ao fazer upload.save() na view)
+    with upload.arquivo.open("rb") as f:
+        conteudo = f.read()
 
     sheet = _abrir_sheet(conteudo)
 
