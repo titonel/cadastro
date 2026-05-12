@@ -276,6 +276,37 @@ COLUNAS_SIRESP = [
 ]
 
 
+# Mapeamento das colunas do SIRESP — relatório de Cirurgias/Exames (A–Y, 25 colunas)
+# Coluna N "Atendidos" é mapeada em `presencial`; teleconsulta e agend_totais_2 ficam em 0.
+COLUNAS_SIRESP_EXAMES = [
+    "especialidade_medica",       # A  (0)  Procedimento
+    "vagas_ofertadas",            # B  (1)
+    "agend_totais",               # C  (2)
+    "agend_totais_pct",           # D  (3)
+    "agend_bolsao",               # E  (4)
+    "agend_bolsao_pct",           # F  (5)
+    "nao_distribuidas",           # G  (6)
+    "nao_distribuidas_pct",       # H  (7)
+    "cota",                       # I  (8)
+    "cota_pct",                   # J  (9)
+    "extra",                      # K  (10)
+    "extra_pct",                  # L  (11)
+    "total_geral",                # M  (12)
+    "presencial",                 # N  (13)  Atendidos
+    "presencial_pct",             # O  (14)  Atendidos %
+    "recepcao_ausente",           # P  (15)
+    "recepcao_ausente_pct",       # Q  (16)
+    "recepcao_dispensado",        # R  (17)
+    "recepcao_dispensado_pct",    # S  (18)
+    "recepcao_desistente",        # T  (19)
+    "recepcao_desistente_pct",    # U  (20)
+    "recepcao_nao_informado",     # V  (21)
+    "recepcao_nao_informado_pct", # W  (22)
+    "alta",                       # X  (23)
+    "alta_pct",                   # Y  (24)
+]
+
+
 class ProducaoAgenda(models.Model):
     """Produção consolidada de uma agenda (especialidade) em um período."""
     upload = models.ForeignKey(
