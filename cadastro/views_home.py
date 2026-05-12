@@ -44,10 +44,13 @@ def acompanhamento(request):
         )
         upload.save()
 
-        # Processa imediatamente
+        # Processa imediatamente com o parser adequado ao tipo de relatório
         try:
-            from .producao_siresp import processar_upload
-            processar_upload(upload.pk)
+            if tipo == TipoRelatorioProducao.CIRURGIA_EXAME:
+                from .producao_siresp_exames import processar_upload_exames as _processar
+            else:
+                from .producao_siresp import processar_upload as _processar
+            _processar(upload.pk)
             messages.success(
                 request,
                 f"Arquivo importado com sucesso: "
