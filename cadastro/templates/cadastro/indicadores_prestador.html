@@ -92,6 +92,28 @@
   </span>
 </div>
 
+
+{# ── Aviso: sem médicos vinculados ── #}
+{% if aviso_sem_medicos %}
+<div style="background:#FFFAE5;border-left:4px solid var(--amber);border-radius:var(--radius);
+            padding:.85rem 1.1rem;margin-bottom:1.25rem;font-size:.875rem;color:#7A5500">
+  ⚠️ <strong>Nenhum médico cadastrado para este prestador.</strong>
+  Os dados exibidos são a produção agregada de toda a agenda — não filtrada por profissional.
+  <a href="{% url 'cadastro:medico_create' %}" style="font-weight:700;color:var(--blue)">
+    Cadastrar médicos →
+  </a>
+</div>
+{% else %}
+<div style="background:#EDF7F1;border-left:4px solid #2EAA57;border-radius:var(--radius);
+            padding:.75rem 1.1rem;margin-bottom:1.25rem;font-size:.8125rem;color:#1A5C2F;
+            display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+  <span>✅ Produção filtrada pelos <strong>{{ medicos_do_prestador|length }} médico{{ medicos_do_prestador|length|pluralize }}</strong> vinculados:</span>
+  <span style="color:var(--color-text-muted);font-weight:300">
+    {% for nome in medicos_do_prestador %}{{ nome }}{% if not forloop.last %} · {% endif %}{% endfor %}
+  </span>
+</div>
+{% endif %}
+
 {# Grid de gráficos #}
 <div class="charts-grid" id="charts-grid"></div>
 
