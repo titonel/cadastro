@@ -28,7 +28,7 @@ class Prestador(models.Model):
     nome_empresa = models.CharField("Razão Social", max_length=300)
     cnpj = models.CharField(
         "CNPJ",
-        max_length=14,
+        max_length=20,
         unique=True,
         validators=[RegexValidator(r"^\d{14}$", "Informe os 14 dígitos do CNPJ sem pontuação")],
     )
@@ -44,20 +44,20 @@ class Prestador(models.Model):
     estado = models.CharField("Estado (UF)", max_length=2, default="SP", blank=True)
     cep = models.CharField(
         "CEP",
-        max_length=8,
+        max_length=20,
         blank=True,
         validators=[RegexValidator(r"^(\d{8})?$", "Informe os 8 dígitos do CEP")],
     )
 
     # Contato
-    telefone = models.CharField("Telefone", max_length=11, blank=True)
+    telefone = models.CharField("Telefone", max_length=20, blank=True)
     email = models.EmailField("E-mail", blank=True)
 
     # Representante Legal
     nome_representante = models.CharField("Nome do Representante Legal", max_length=200, blank=True)
     cpf_representante = models.CharField(
         "CPF do Representante",
-        max_length=11,
+        max_length=20,
         blank=True,
         validators=[RegexValidator(r"^(\d{11})?$", "Informe os 11 dígitos do CPF")],
     )
@@ -65,7 +65,7 @@ class Prestador(models.Model):
 
     # Testemunha
     nome_testemunha = models.CharField("Nome da Testemunha", max_length=200, blank=True)
-    telefone_testemunha = models.CharField("Telefone da Testemunha", max_length=11, blank=True)
+    telefone_testemunha = models.CharField("Telefone da Testemunha", max_length=20, blank=True)
     email_testemunha = models.EmailField("E-mail da Testemunha", blank=True)
 
     # Especialidades e serviços
@@ -406,7 +406,7 @@ class Medico(models.Model):
     nome_completo = models.CharField("Nome Completo", max_length=300)
     cpf = models.CharField(
         "CPF",
-        max_length=11,
+        max_length=20,
         unique=True,
         blank=True,
         validators=[RegexValidator(r"^(\d{11})?$", "Informe os 11 dígitos do CPF")],
@@ -421,11 +421,11 @@ class Medico(models.Model):
     )
 
     # ── Contato ─────────────────────────────────────────────────────────────
-    telefone = models.CharField("Telefone / WhatsApp", max_length=11, blank=True)
+    telefone = models.CharField("Telefone / WhatsApp", max_length=20, blank=True)
     email    = models.EmailField("E-mail", blank=True)
 
     # ── Endereço ─────────────────────────────────────────────────────────────
-    cep         = models.CharField("CEP", max_length=8, blank=True,
+    cep         = models.CharField("CEP", max_length=20, blank=True,
                                    validators=[RegexValidator(r"^(\d{8})?$", "Informe os 8 dígitos do CEP")])
     logradouro  = models.CharField("Logradouro", max_length=300, blank=True)
     numero      = models.CharField("Número",     max_length=20,  blank=True)
