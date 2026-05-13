@@ -26,6 +26,9 @@ urlpatterns = [
     path("prestadores/<int:pk>/editar/", views.prestador_edit, name="prestador_edit"),
     path("prestadores/<int:pk>/excluir/", views.prestador_delete, name="prestador_delete"),
 
+    # ── Diagnóstico temporário ────────────────────────────────────────────────
+    path("diagnostico/producao/", views_home.diagnostico_producao, name="diagnostico_producao"),
+
     # ── Módulo: Cadastro — Médicos ────────────────────────────────────────────
     path("medicos/", views.medico_list, name="medico_list"),
     path("medicos/novo/", views.medico_create, name="medico_create"),

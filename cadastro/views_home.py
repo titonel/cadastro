@@ -386,3 +386,75 @@ def relatorio_download(request, pk):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+def diagnostico_producao(request):
+    """Rota temporária de diagnóstico — remover após resolver o problema."""
+    from django.http import JsonResponse
+    from .models import UploadProducao, ProducaoAgenda, ProducaoMedico, Prestador, Medico
+
+    prestador_pk = request.GET.get("prestador", "")
+
+    data = {
+        "uploads": [],
+        "amostra_agendas": [],
+        "amostra_medicos_producao": [],
+        "prestador": None,
+        "medicos_cadastrados": [],
+    }
+
+    # Uploads
+    for u in UploadProducao.objects.order_by("data_inicio_periodo")[:20]:
+        data["uploads"].append({
+            "pk": u.pk,
+            "tipo": u.get_tipo_display(),
+            "status": u.status,
+            "periodo": str(u.data_inicio_periodo),
+            "total_agendas": u.total_agendas,
+            "total_medicos": u.total_medicos,
+        })
+
+    # Amostra de agendas
+    for ag in ProducaoAgenda.objects.select_related("upload").order_by("upload__data_inicio_periodo")[:20]:
+        data["amostra_agendas"].append({
+            "periodo": str(ag.upload.data_inicio_periodo),
+            "nome_agenda": ag.nome_agenda,
+            "agend_totais": ag.agend_totais,
+        })
+
+    # Amostra de médicos na produção
+    for pm in ProducaoMedico.objects.select_related("agenda__upload").order_by("agenda__upload__data_inicio_periodo")[:30]:
+        data["amostra_medicos_producao"].append({
+            "periodo": str(pm.agenda.upload.data_inicio_periodo),
+            "nome_medico": pm.nome_medico,
+            "agenda": pm.agenda.nome_agenda,
+            "agend_totais": pm.agend_totais,
+        })
+
+    # Prestador e médicos cadastrados
+    if prestador_pk:
+        try:
+            p = Prestador.objects.get(pk=prestador_pk)
+            data["prestador"] = {
+                "pk": p.pk,
+                "nome": p.nome_empresa,
+                "servicos": [{"descricao": s.descricao, "qtde_mes": s.quantidade_estimada_mes}
+                             for s in p.servicos.all()],
+            }
+            data["medicos_cadastrados"] = [
+                {"nome_completo": m.nome_completo, "nome_upper": m.nome_completo.strip().upper()}
+                for m in Medico.objects.filter(prestador=p)
+            ]
+        except Prestador.DoesNotExist:
+            data["prestador"] = "não encontrado"
+
+    # Cruzamento: nomes de médicos cadastrados vs nomes na produção
+    if data["medicos_cadastrados"] and data["amostra_medicos_producao"]:
+        nomes_upper = {m["nome_upper"] for m in data["medicos_cadastrados"]}
+        matches = [pm for pm in data["amostra_medicos_producao"]
+                   if pm["nome_medico"].strip().upper() in nomes_upper]
+        data["cruzamento_matches"] = matches
+    else:
+        data["cruzamento_matches"] = []
+
+    return JsonResponse(data, json_dumps_params={"ensure_ascii": False, "indent": 2})
