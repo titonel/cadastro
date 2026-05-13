@@ -457,4 +457,29 @@ def diagnostico_producao(request):
     else:
         data["cruzamento_matches"] = []
 
+    # Busca específica por nome de médico na produção
+    buscar_medico = request.GET.get("buscar_medico", "").strip().upper()
+    if buscar_medico:
+        matches = list(
+            ProducaoMedico.objects
+            .filter(nome_medico__icontains=buscar_medico)
+            .select_related("agenda__upload")
+            .values("nome_medico", "agenda__nome_agenda",
+                    "agenda__upload__data_inicio_periodo", "agend_totais")
+            .order_by("agenda__upload__data_inicio_periodo")[:50]
+        )
+        data["busca_medico"] = {
+            "termo": buscar_medico,
+            "total_encontrado": len(matches),
+            "registros": [
+                {
+                    "periodo": str(m["agenda__upload__data_inicio_periodo"]),
+                    "nome_medico": m["nome_medico"],
+                    "agenda": m["agenda__nome_agenda"],
+                    "agend_totais": m["agend_totais"],
+                }
+                for m in matches
+            ],
+        }
+
     return JsonResponse(data, json_dumps_params={"ensure_ascii": False, "indent": 2})
