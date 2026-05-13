@@ -598,7 +598,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--text);
 }
 .mod-desc {
-  font-size: .8125rem; font-weight: 300; color: var(--text-muted);
+  font-size: 1.22rem; font-weight: 300; color: var(--text-muted);
   line-height: 1.7; max-width: 36ch;
 }
 .mod-tags { display: flex; flex-wrap: wrap; gap: .4rem; }
