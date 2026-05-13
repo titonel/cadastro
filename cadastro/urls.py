@@ -17,6 +17,7 @@ urlpatterns = [
 
     # ── Módulo: Indicadores ───────────────────────────────────────────────────
     path("indicadores/", views_home.indicadores, name="indicadores"),
+    path("indicadores/prestador/", views_home.indicadores_prestador, name="indicadores_prestador"),
 
     # ── Módulo: Cadastro — Prestadores ────────────────────────────────────────
     path("prestadores/", views.prestador_list, name="prestador_list"),

@@ -1,0 +1,375 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Metas por Prestador — Âmbar{% endblock %}
+
+{% block content %}
+<style>
+/* ── Filtros ── */
+.filtros-bar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;
+  box-shadow: var(--shadow);
+}
+.filtro-group { display: flex; flex-direction: column; gap: .3rem; flex: 1; min-width: 160px; }
+.filtro-group label { font-size: .75rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.filtro-actions { display: flex; gap: .5rem; align-items: flex-end; }
+
+/* ── Estado vazio / loading ── */
+.dash-empty {
+  text-align: center; padding: 4rem 2rem;
+  color: var(--color-text-muted); font-weight: 300;
+}
+.dash-empty-icon { font-size: 3rem; margin-bottom: .75rem; }
+
+/* ── Cabeçalho do prestador selecionado ── */
+.prestador-header {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--amber);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem;
+}
+.prestador-header-nome { font-size: 1.05rem; font-weight: 700; }
+.prestador-header-esp  { font-size: .8125rem; font-weight: 300; color: var(--color-text-muted); }
+.meta-pill {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .75rem; font-weight: 700;
+  padding: .3rem .8rem; border-radius: 999px;
+  background: rgba(255,191,0,.12); border: 1px solid rgba(255,191,0,.35);
+  color: var(--amber-dark);
+}
+
+/* ── Grid de gráficos ── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+  gap: 1.25rem;
+}
+@media (max-width: 640px) { .charts-grid { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow);
+}
+.chart-card-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: .75rem;
+  margin-bottom: 1rem; flex-wrap: wrap;
+}
+.chart-card-title  { font-size: .9375rem; font-weight: 700; }
+.chart-card-meta   { font-size: .75rem; font-weight: 300; color: var(--color-text-muted); margin-top: .15rem; }
+
+.chart-legend {
+  display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+.legend-item {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .75rem; font-weight: 400; color: var(--color-text-muted);
+}
+.legend-line-solid  { width: 20px; height: 2px; background: var(--blue); border-radius: 2px; }
+.legend-line-dashed { width: 20px; height: 0; border-top: 2px dashed var(--amber-dark); }
+
+.chart-wrap { position: relative; height: 220px; }
+canvas { max-height: 220px; }
+
+/* ── Stats do card ── */
+.chart-stats {
+  display: flex; gap: 1.5rem; margin-top: .75rem;
+  padding-top: .75rem; border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+.chart-stat { display: flex; flex-direction: column; gap: .1rem; }
+.chart-stat-label { font-size: .68rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.chart-stat-value { font-size: 1.1rem; font-weight: 900; }
+.chart-stat-value.ok   { color: #1e7c3a; }
+.chart-stat-value.warn { color: var(--amber-dark); }
+.chart-stat-value.bad  { color: #c0392b; }
+
+/* loading spinner */
+#loading-overlay {
+  position: fixed; inset: 0;
+  background: rgba(255,253,245,.8);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; display: none;
+}
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<div id="loading-overlay"><div class="spinner"></div></div>
+
+<div class="page-header">
+  <h1 class="page-title">📊 Metas por Prestador</h1>
+  <a href="{% url 'cadastro:indicadores' %}" class="btn btn-secondary btn-sm">← Indicadores</a>
+</div>
+
+{# ── Filtros ── #}
+<form method="get" id="form-filtros" class="filtros-bar">
+
+  <div class="filtro-group" style="min-width:260px;flex:2">
+    <label for="prestador">Razão Social</label>
+    <select name="prestador" id="prestador" class="form-control">
+      <option value="">— selecione um prestador —</option>
+      {% for p in prestadores %}
+      <option value="{{ p.pk }}" {% if p.pk|stringformat:"s" == prestador_selecionado %}selected{% endif %}>
+        {{ p.nome_empresa }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group">
+    <label for="especialidade">Especialidade</label>
+    <select name="especialidade" id="especialidade" class="form-control">
+      <option value="">Todas</option>
+      {% for e in especialidades %}
+      <option value="{{ e.pk }}" {% if e.pk|stringformat:"s" == especialidade_selecionada %}selected{% endif %}>
+        {{ e.nome }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group" style="min-width:120px">
+    <label for="mes_ini">Mês inicial</label>
+    <select name="mes_ini" id="mes_ini" class="form-control">
+      {% for v, l in meses_opcoes %}
+      <option value="{{ v }}" {% if v == mes_ini_selecionado %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group" style="min-width:120px">
+    <label for="mes_fim">Mês final</label>
+    <select name="mes_fim" id="mes_fim" class="form-control">
+      {% for v, l in meses_opcoes %}
+      <option value="{{ v }}" {% if v == mes_fim_selecionado %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-actions">
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    <a href="{% url 'cadastro:indicadores_prestador' %}" class="btn btn-secondary">Limpar</a>
+  </div>
+</form>
+
+{# ── Conteúdo ── #}
+{% if not prestador_selecionado %}
+<div class="dash-empty">
+  <div class="dash-empty-icon">🔍</div>
+  <p>Selecione um prestador para visualizar o dashboard de metas.</p>
+</div>
+
+{% elif not series %}
+<div class="dash-empty">
+  <div class="dash-empty-icon">📭</div>
+  <p>Nenhum dado de produção encontrado para o período selecionado.<br>
+  Verifique se há uploads importados no módulo de Acompanhamento.</p>
+</div>
+
+{% else %}
+{# Cabeçalho do prestador #}
+<div class="prestador-header">
+  <div>
+    <div class="prestador-header-nome">{{ prestador_obj.nome_empresa }}</div>
+    <div class="prestador-header-esp">
+      {% for e in prestador_obj.especialidades.all %}{{ e.nome }}{% if not forloop.last %} · {% endif %}{% endfor %}
+      {% if prestador_obj.data_inicio_contrato %}
+        &nbsp;·&nbsp; Vigência: {{ prestador_obj.data_inicio_contrato|date:"m/Y" }} – {{ prestador_obj.data_fim_contrato|date:"m/Y" }}
+      {% endif %}
+    </div>
+  </div>
+  <span class="meta-pill">
+    {{ series|length }} serviço{{ series|length|pluralize }} · {{ periodo_label }}
+  </span>
+</div>
+
+{# Grid de gráficos #}
+<div class="charts-grid" id="charts-grid"></div>
+
+{# Dados serializados para o JS #}
+<script>
+const SERIES_DATA = {{ series_json|safe }};
+const LABELS = {{ labels_json|safe }};
+</script>
+{% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* ── Filtros: auto-submit ao trocar prestador ou especialidade ── */
+document.getElementById('prestador').addEventListener('change', () => {
+  document.getElementById('form-filtros').submit();
+});
+document.getElementById('especialidade').addEventListener('change', () => {
+  document.getElementById('form-filtros').submit();
+});
+
+{% if series %}
+/* ── Paleta ── */
+const C_PROD   = '#007EFF';   /* azul — produção real  */
+const C_META   = '#807040';   /* âmbar escuro — meta   */
+const C_FILL   = 'rgba(0,126,255,.07)';
+
+/* ── Helpers ── */
+function pct(real, meta) {
+  if (!meta || meta === 0) return null;
+  return Math.round((real / meta) * 100);
+}
+function mediaArr(arr) {
+  const v = arr.filter(x => x !== null);
+  if (!v.length) return 0;
+  return Math.round(v.reduce((a,b)=>a+b,0) / v.length);
+}
+function statusClass(p) {
+  if (p === null) return '';
+  if (p >= 90) return 'ok';
+  if (p >= 70) return 'warn';
+  return 'bad';
+}
+
+const grid = document.getElementById('charts-grid');
+
+SERIES_DATA.forEach(serie => {
+  /* card */
+  const card = document.createElement('div');
+  card.className = 'chart-card';
+
+  /* média de aderência */
+  const adh = serie.producao.map((r,i) => pct(r, serie.meta_fixa));
+  const adhMedia = mediaArr(adh);
+  const adhClass = statusClass(adhMedia);
+  const totalProd = serie.producao.reduce((a,b)=>a+(b||0),0);
+  const totalMeta = (serie.meta_fixa || 0) * LABELS.length;
+
+  card.innerHTML = `
+    <div class="chart-card-header">
+      <div>
+        <div class="chart-card-title">${serie.descricao}</div>
+        <div class="chart-card-meta">${serie.tipo_label} · Meta: ${serie.meta_fixa} / mês</div>
+      </div>
+    </div>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-line-solid"></div> Produção real</div>
+      <div class="legend-item"><div class="legend-line-dashed"></div> Meta contratualizada</div>
+    </div>
+    <div class="chart-wrap"><canvas id="c-${serie.id}"></canvas></div>
+    <div class="chart-stats">
+      <div class="chart-stat">
+        <span class="chart-stat-label">Aderência média</span>
+        <span class="chart-stat-value ${adhClass}">${adhMedia !== null ? adhMedia+'%' : '—'}</span>
+      </div>
+      <div class="chart-stat">
+        <span class="chart-stat-label">Produção acumulada</span>
+        <span class="chart-stat-value">${totalProd.toLocaleString('pt-BR')}</span>
+      </div>
+      <div class="chart-stat">
+        <span class="chart-stat-label">Meta acumulada</span>
+        <span class="chart-stat-value">${totalMeta.toLocaleString('pt-BR')}</span>
+      </div>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  /* dataset meta (linha tracejada horizontal no valor fixo) */
+  const metaArr = LABELS.map(() => serie.meta_fixa);
+
+  new Chart(document.getElementById(`c-${serie.id}`), {
+    type: 'line',
+    data: {
+      labels: LABELS,
+      datasets: [
+        {
+          label: 'Produção real',
+          data: serie.producao,
+          borderColor: C_PROD,
+          backgroundColor: C_FILL,
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: C_PROD,
+          fill: true,
+          tension: 0.35,
+          order: 1,
+        },
+        {
+          label: 'Meta contratualizada',
+          data: metaArr,
+          borderColor: C_META,
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#2A1F00',
+          titleColor: '#FFBF00',
+          bodyColor: 'rgba(255,255,255,.85)',
+          padding: 10,
+          callbacks: {
+            afterBody(items) {
+              const real = items.find(i=>i.datasetIndex===0)?.parsed.y ?? null;
+              const meta = serie.meta_fixa;
+              if (real !== null && meta) {
+                const p = Math.round((real/meta)*100);
+                return [`Aderência: ${p}%`];
+              }
+              return [];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(128,112,64,.08)' },
+          ticks: {
+            font: { family: "'Lato', sans-serif", size: 11 },
+            color: '#6B5B2E',
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(128,112,64,.08)' },
+          ticks: {
+            font: { family: "'Lato', sans-serif", size: 11 },
+            color: '#6B5B2E',
+            precision: 0,
+          }
+        }
+      }
+    }
+  });
+});
+{% endif %}
+
+/* ── Submit com loading ── */
+document.getElementById('form-filtros').addEventListener('submit', () => {
+  document.getElementById('loading-overlay').style.display = 'flex';
+});
+</script>
+{% endblock %}

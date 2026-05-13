@@ -85,8 +85,209 @@ def acompanhamento(request):
 
 
 def indicadores(request):
-    """Módulo de indicadores / dashboards — em construção."""
+    """Hub do módulo de indicadores com links para os sub-dashboards."""
     return render(request, "cadastro/indicadores.html", {})
+
+
+def indicadores_prestador(request):
+    """
+    Dashboard de metas por prestador.
+
+    Cruza ServicoContratado (meta mensal fixa) com ProducaoAgenda
+    (produção real mensal importada do SIRESP) numa série temporal.
+
+    Lógica de vínculo:
+      ServicoContratado.descricao  ↔  ProducaoAgenda.nome_agenda
+      (comparação case-insensitive após strip)
+
+    Filtros aceitos via GET:
+      prestador      — pk do Prestador
+      especialidade  — pk da Especialidade (filtra os serviços do prestador)
+      mes_ini        — "AAAA-MM"  (início do intervalo de períodos)
+      mes_fim        — "AAAA-MM"  (fim do intervalo de períodos)
+    """
+    import json
+    from datetime import date
+    from collections import defaultdict
+    from django.db.models import Q
+
+    from .models import (
+        Prestador, Especialidade,
+        ServicoContratado, UploadProducao,
+        ProducaoAgenda, TipoRelatorioProducao,
+    )
+
+    prestadores    = Prestador.objects.filter(ativo=True).order_by("nome_empresa")
+    especialidades = Especialidade.objects.filter(ativa=True).order_by("nome")
+
+    # ── Parâmetros GET ──────────────────────────────────────────────────────
+    prestador_pk          = request.GET.get("prestador", "")
+    especialidade_pk      = request.GET.get("especialidade", "")
+    mes_ini_str           = request.GET.get("mes_ini", "")
+    mes_fim_str           = request.GET.get("mes_fim", "")
+
+    # ── Gerar opções de mês a partir dos uploads existentes ─────────────────
+    uploads_qs = UploadProducao.objects.filter(
+        status="confirmado",
+        data_inicio_periodo__isnull=False,
+    ).order_by("data_inicio_periodo")
+
+    periodos_disponiveis = []
+    seen = set()
+    for u in uploads_qs:
+        chave = u.data_inicio_periodo.strftime("%Y-%m")
+        if chave not in seen:
+            seen.add(chave)
+            periodos_disponiveis.append((
+                chave,
+                u.data_inicio_periodo.strftime("%b/%Y").capitalize(),
+            ))
+
+    # Se não há uploads ainda, gera os últimos 12 meses como opções
+    if not periodos_disponiveis:
+        hoje = date.today()
+        for i in range(11, -1, -1):
+            m = hoje.month - i
+            y = hoje.year
+            while m <= 0:
+                m += 12; y -= 1
+            chave = f"{y}-{m:02d}"
+            from calendar import month_abbr
+            periodos_disponiveis.append((chave, f"{month_abbr[m]}/{y}".capitalize()))
+
+    meses_opcoes = periodos_disponiveis
+
+    # Defaults: primeiro e último período disponível
+    if periodos_disponiveis:
+        mes_ini_default = periodos_disponiveis[0][0]
+        mes_fim_default = periodos_disponiveis[-1][0]
+    else:
+        hoje = date.today()
+        mes_ini_default = mes_fim_default = hoje.strftime("%Y-%m")
+
+    mes_ini_sel = mes_ini_str or mes_ini_default
+    mes_fim_sel = mes_fim_str or mes_fim_default
+
+    # ── Retorno antecipado se nenhum prestador selecionado ──────────────────
+    if not prestador_pk:
+        return render(request, "cadastro/indicadores_prestador.html", {
+            "prestadores": prestadores,
+            "especialidades": especialidades,
+            "meses_opcoes": meses_opcoes,
+            "mes_ini_selecionado": mes_ini_sel,
+            "mes_fim_selecionado": mes_fim_sel,
+            "prestador_selecionado": "",
+            "especialidade_selecionada": especialidade_pk,
+            "series": [],
+            "series_json": "[]",
+            "labels_json": "[]",
+            "periodo_label": "",
+            "prestador_obj": None,
+        })
+
+    prestador_obj = get_object_or_404(Prestador, pk=prestador_pk, ativo=True)
+
+    # ── Serviços contratados do prestador ────────────────────────────────────
+    servicos_qs = ServicoContratado.objects.filter(
+        prestador=prestador_obj
+    ).select_related("especialidade")
+
+    if especialidade_pk:
+        servicos_qs = servicos_qs.filter(especialidade__pk=especialidade_pk)
+
+    servicos = list(servicos_qs)
+
+    # ── Períodos no intervalo selecionado ────────────────────────────────────
+    # Filtrar periodos_disponiveis para o intervalo mes_ini..mes_fim
+    periodos_no_range = [
+        (chave, label)
+        for chave, label in periodos_disponiveis
+        if mes_ini_sel <= chave <= mes_fim_sel
+    ]
+
+    if not periodos_no_range:
+        periodos_no_range = periodos_disponiveis
+
+    labels = [label for _, label in periodos_no_range]
+    chaves = [chave for chave, _ in periodos_no_range]
+
+    # ── Buscar uploads confirmados no intervalo ──────────────────────────────
+    # Converte "AAAA-MM" para datas de início de cada upload
+    def chave_to_date_range(chave):
+        y, m = int(chave[:4]), int(chave[5:])
+        d_ini = date(y, m, 1)
+        # último dia do mês
+        import calendar
+        ultimo = calendar.monthrange(y, m)[1]
+        d_fim = date(y, m, ultimo)
+        return d_ini, d_fim
+
+    # Coletar todos os uploads do intervalo de uma vez
+    ini_global, _ = chave_to_date_range(chaves[0])
+    _, fim_global = chave_to_date_range(chaves[-1])
+
+    uploads_no_range = UploadProducao.objects.filter(
+        status="confirmado",
+        data_inicio_periodo__gte=ini_global,
+        data_inicio_periodo__lte=fim_global,
+    )
+
+    # ProducaoAgenda agrupada por (chave_mes, nome_agenda)
+    agendas_qs = ProducaoAgenda.objects.filter(
+        upload__in=uploads_no_range,
+    ).select_related("upload")
+
+    # Índice: nome_agenda.upper() → {chave_mes: agend_totais}
+    prod_index = defaultdict(dict)
+    for ag in agendas_qs:
+        chave_mes = ag.upload.data_inicio_periodo.strftime("%Y-%m")
+        prod_index[ag.nome_agenda.strip().upper()][chave_mes] = ag.agend_totais
+
+    # ── Montar séries ────────────────────────────────────────────────────────
+    tipo_labels = {
+        "consulta":        "Consulta Ambulatorial",
+        "cirurgia_pequeno":"Cirurgia de Pequeno Porte",
+        "cirurgia_medio":  "Cirurgia de Médio Porte",
+        "exame":           "Exame / Laudo",
+        "outro":           "Outro",
+    }
+
+    series = []
+    for srv in servicos:
+        descricao_key = srv.descricao.strip().upper()
+        producao_por_mes = []
+        for chave in chaves:
+            val = prod_index.get(descricao_key, {}).get(chave)
+            producao_por_mes.append(val if val is not None else 0)
+
+        series.append({
+            "id": srv.pk,
+            "descricao": srv.descricao or srv.get_tipo_servico_display(),
+            "tipo_label": tipo_labels.get(srv.tipo_servico, srv.tipo_servico),
+            "meta_fixa": srv.quantidade_estimada_mes,
+            "producao": producao_por_mes,
+        })
+
+    # Label do período
+    if periodos_no_range:
+        periodo_label = f"{periodos_no_range[0][1]} – {periodos_no_range[-1][1]}"
+    else:
+        periodo_label = "—"
+
+    return render(request, "cadastro/indicadores_prestador.html", {
+        "prestadores": prestadores,
+        "especialidades": especialidades,
+        "meses_opcoes": meses_opcoes,
+        "mes_ini_selecionado": mes_ini_sel,
+        "mes_fim_selecionado": mes_fim_sel,
+        "prestador_selecionado": prestador_pk,
+        "especialidade_selecionada": especialidade_pk,
+        "prestador_obj": prestador_obj,
+        "series": series,
+        "series_json": json.dumps(series, ensure_ascii=False),
+        "labels_json": json.dumps(labels, ensure_ascii=False),
+        "periodo_label": periodo_label,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
