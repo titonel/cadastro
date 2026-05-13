@@ -40,6 +40,14 @@ O Âmbar centraliza quatro grandes funções de gestão:
 
 Importação de arquivos de produção extraídos diretamente do portal **SIRESP** (Secretaria de Estado da Saúde de São Paulo).
 
+#### Origem dos arquivos no SIRESP
+
+Os arquivos devem ser exportados pelo caminho:
+
+> **Relatórios → Produtividade → P05 Produção x Profissional**
+
+Selecione o período desejado, a unidade executante e clique em exportar. O arquivo gerado (extensão `.xls`) pode ser enviado diretamente pelo módulo de Acompanhamento — o sistema identifica automaticamente se é um relatório de Consultas ou de Cirurgias/Exames a partir da estrutura interna do arquivo.
+
 #### Formatos suportados
 
 O SIRESP exporta arquivos com extensão `.xls` que são, na verdade, **documentos HTML em ISO-8859-1** sem assinatura binária OLE2/BIFF. O sistema detecta o formato automaticamente pelo primeiro byte do arquivo:
