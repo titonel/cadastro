@@ -60,7 +60,7 @@ ServicoFormSet = inlineformset_factory(
         "quantidade_estimada_mes", "valor_unitario",
         "prazo_entrega_laudo_dias", "remoto", "observacoes",
     ],
-    extra=0,          # não exibe linha vazia quando há initial data
+    extra=1,          # sempre exibe ao menos uma linha vazia para adicionar serviços
     can_delete=True,
     widgets={
         "descricao": forms.TextInput(attrs={"class": "form-control"}),

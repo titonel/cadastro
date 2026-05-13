@@ -8,9 +8,10 @@
   </div>
 </div>
 
-<form method="post">
+<form method="post" id="form-prestador">
   {% csrf_token %}
 
+  {# 1. Dados da Empresa #}
   <div class="card form-section">
     <h2 class="form-section-title">1. Dados da Empresa</h2>
     <div class="form-grid">
@@ -21,6 +22,7 @@
     </div>
   </div>
 
+  {# 2. Endereço #}
   <div class="card form-section">
     <h2 class="form-section-title">2. Endereço</h2>
     <div class="form-grid">
@@ -34,6 +36,7 @@
     </div>
   </div>
 
+  {# 3. Contato #}
   <div class="card form-section">
     <h2 class="form-section-title">3. Contato</h2>
     <div class="form-grid">
@@ -42,6 +45,7 @@
     </div>
   </div>
 
+  {# 4. Representante Legal #}
   <div class="card form-section">
     <h2 class="form-section-title">4. Representante Legal</h2>
     <div class="form-grid">
@@ -51,6 +55,7 @@
     </div>
   </div>
 
+  {# 5. Testemunha #}
   <div class="card form-section">
     <h2 class="form-section-title">5. Testemunha</h2>
     <div class="form-grid">
@@ -60,11 +65,20 @@
     </div>
   </div>
 
+  {# 6. Especialidades #}
   <div class="card form-section">
     <h2 class="form-section-title">6. Especialidades Médicas</h2>
-    {{ form.especialidades }}
+    <p style="font-size:.8125rem;color:var(--color-text-muted);margin-bottom:.75rem">
+      Marque todas as especialidades atendidas por este prestador. Se a extração automática do contrato capturou algo incorreto, desmarque e corrija aqui.
+    </p>
+    <ul class="checkbox-list">
+      {% for checkbox in form.especialidades %}
+      <li>{{ checkbox }}</li>
+      {% endfor %}
+    </ul>
   </div>
 
+  {# 7. Vigência #}
   <div class="card form-section">
     <h2 class="form-section-title">7. Vigência do Contrato</h2>
     <div class="form-grid">
@@ -75,48 +89,149 @@
     </div>
   </div>
 
+  {# 8. Serviços Contratados #}
   <div class="card form-section">
     <h2 class="form-section-title">8. Serviços Contratados</h2>
+    <p style="font-size:.8125rem;color:var(--color-text-muted);margin-bottom:1rem">
+      Cada serviço representa um item contratualizado com meta mensal e valor unitário.
+      A descrição deve corresponder ao nome da agenda no SIRESP (usada nos mapeamentos do dashboard).
+    </p>
+
     {{ formset.management_form }}
     <div id="formset-container">
       {% for fs_form in formset %}
-      <div class="formset-row">
-        {% if fs_form.instance.pk %}{{ fs_form.DELETE }}{% endif %}
-        <div class="formset-grid">
-          <div class="form-group"><label>{{ fs_form.tipo_servico.label }}</label>{{ fs_form.tipo_servico }}</div>
-          <div class="form-group"><label>{{ fs_form.especialidade.label }}</label>{{ fs_form.especialidade }}</div>
-          <div class="form-group" style="grid-column:span 2"><label>{{ fs_form.descricao.label }}</label>{{ fs_form.descricao }}</div>
-          <div class="form-group"><label>{{ fs_form.unidade_medida.label }}</label>{{ fs_form.unidade_medida }}</div>
-          <div class="form-group"><label>{{ fs_form.quantidade_estimada_mes.label }}</label>{{ fs_form.quantidade_estimada_mes }}</div>
-          <div class="form-group"><label>{{ fs_form.valor_unitario.label }}</label>{{ fs_form.valor_unitario }}</div>
-          <div class="form-group"><label>{{ fs_form.prazo_entrega_laudo_dias.label }}</label>{{ fs_form.prazo_entrega_laudo_dias }}</div>
-          <div class="form-group"><label>{{ fs_form.remoto.label }}</label>{{ fs_form.remoto }}</div>
-          <div class="form-group full"><label>{{ fs_form.observacoes.label }}</label>{{ fs_form.observacoes }}</div>
+      <div class="formset-row" id="row-{{ forloop.counter0 }}">
+        <div class="formset-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+          <div class="form-group">
+            <label>{{ fs_form.tipo_servico.label }}</label>
+            {{ fs_form.tipo_servico }}
+          </div>
+          <div class="form-group">
+            <label>{{ fs_form.especialidade.label }}</label>
+            {{ fs_form.especialidade }}
+          </div>
+          <div class="form-group" style="grid-column:span 2">
+            <label>{{ fs_form.descricao.label }}</label>
+            {{ fs_form.descricao }}
+          </div>
+          <div class="form-group">
+            <label>{{ fs_form.unidade_medida.label }}</label>
+            {{ fs_form.unidade_medida }}
+          </div>
+          <div class="form-group">
+            <label>{{ fs_form.quantidade_estimada_mes.label }}</label>
+            {{ fs_form.quantidade_estimada_mes }}
+          </div>
+          <div class="form-group">
+            <label>{{ fs_form.valor_unitario.label }}</label>
+            {{ fs_form.valor_unitario }}
+          </div>
+          <div class="form-group">
+            <label>{{ fs_form.prazo_entrega_laudo_dias.label }}</label>
+            {{ fs_form.prazo_entrega_laudo_dias }}
+          </div>
+          <div class="form-group" style="align-self:end">
+            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+              {{ fs_form.remoto }} {{ fs_form.remoto.label }}
+            </label>
+          </div>
+          <div class="form-group full">
+            <label>{{ fs_form.observacoes.label }}</label>
+            {{ fs_form.observacoes }}
+          </div>
           {% for hidden in fs_form.hidden_fields %}{{ hidden }}{% endfor %}
         </div>
-        {% if fs_form.instance.pk %}
-        <div class="formset-delete">
-          <label style="color:#dc3545;cursor:pointer;font-size:.8rem">
-            {{ fs_form.DELETE }} Remover este serviço
+
+        {# Botão remover — aparece sempre, usa o campo DELETE do formset #}
+        <div style="margin-top:.75rem;display:flex;align-items:center;gap:.5rem">
+          {% if fs_form.instance.pk %}
+          <label style="display:flex;align-items:center;gap:.35rem;
+                         color:var(--color-error);font-size:.8rem;cursor:pointer">
+            {{ fs_form.DELETE }}
+            <span>Remover este serviço</span>
           </label>
+          {% else %}
+          <button type="button" class="btn btn-danger btn-sm btn-remover-row">
+            ✕ Cancelar
+          </button>
+          {% endif %}
         </div>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
+
+    <button type="button" id="btn-add-servico" class="btn btn-accent btn-sm" style="margin-top:1rem">
+      + Adicionar Serviço
+    </button>
   </div>
 
   {% if form.errors or formset.errors %}
-  <div class="card" style="border-color:#e0ced7;margin-bottom:1rem">
+  <div class="card" style="border-color:var(--color-error);margin-bottom:1rem">
     <h3 style="color:var(--color-error);margin-bottom:.5rem">Corrija os erros abaixo:</h3>
     {{ form.errors }}
-    {{ formset.errors }}
+    {% for fe in formset.errors %}{% if fe %}{{ fe }}{% endif %}{% endfor %}
   </div>
   {% endif %}
 
-  <div style="display:flex;gap:.75rem;margin-top:1rem">
+  <div style="display:flex;gap:.75rem;margin-top:1rem;flex-wrap:wrap">
     <button type="submit" class="btn btn-primary">💾 Salvar Prestador</button>
     <a href="{% url 'cadastro:prestador_list' %}" class="btn btn-secondary">Cancelar</a>
   </div>
 </form>
+
+<script>
+// ── Adicionar linha de serviço dinamicamente ──────────────────────────────────
+(function () {
+  const container  = document.getElementById('formset-container');
+  const totalInput = document.getElementById('id_servicos-TOTAL_FORMS');
+  const btnAdd     = document.getElementById('btn-add-servico');
+
+  // Template: pega a última linha vazia (extra=1) como modelo
+  // e clona com índice incrementado
+  function getTemplate() {
+    // Seleciona todos os .formset-row e usa o último como template
+    const rows = container.querySelectorAll('.formset-row');
+    return rows[rows.length - 1];
+  }
+
+  btnAdd.addEventListener('click', function () {
+    const total    = parseInt(totalInput.value);
+    const template = getTemplate();
+    const clone    = template.cloneNode(true);
+
+    // Atualizar índices nos atributos name, id, for
+    clone.innerHTML = clone.innerHTML
+      .replace(/servicos-(\d+)-/g, `servicos-${total}-`)
+      .replace(/id_servicos-(\d+)-/g, `id_servicos-${total}-`);
+
+    // Limpar valores do clone
+    clone.querySelectorAll('input[type=text], input[type=number], textarea').forEach(el => {
+      el.value = '';
+    });
+    clone.querySelectorAll('select').forEach(el => {
+      el.selectedIndex = 0;
+    });
+    clone.querySelectorAll('input[type=checkbox]').forEach(el => {
+      el.checked = false;
+    });
+
+    // Botão remover da nova linha
+    const removerBtn = clone.querySelector('.btn-remover-row');
+    if (removerBtn) {
+      removerBtn.addEventListener('click', () => clone.remove());
+    }
+
+    container.appendChild(clone);
+    totalInput.value = total + 1;
+
+    // Scroll suave até a nova linha
+    clone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  // Botões remover das linhas novas (extra) já renderizadas
+  container.querySelectorAll('.btn-remover-row').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.formset-row').remove());
+  });
+})();
+</script>
 {% endblock %}
