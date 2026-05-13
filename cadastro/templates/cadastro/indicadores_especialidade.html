@@ -1,0 +1,173 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Produção por Especialidade — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">📊 Produção por Especialidade</h1>
+  <a href="{% url 'cadastro:indicadores' %}" class="btn btn-secondary btn-sm">← Indicadores</a>
+</div>
+
+<p style="color:var(--color-text-muted);font-weight:300;margin-bottom:1.5rem;max-width:60ch;">
+  Produção mensal agregada de todos os médicos de uma especialidade, independente do prestador.
+</p>
+
+<form method="get" id="form-filtros" class="filtros-bar">
+  <div class="filtro-group" style="min-width:240px;flex:2">
+    <label for="especialidade">Especialidade</label>
+    <select name="especialidade" id="especialidade" class="form-control">
+      <option value="">— selecione —</option>
+      {% for e in especialidades %}
+      <option value="{{ e.pk }}" {% if e.pk|stringformat:"s" == especialidade_selecionada %}selected{% endif %}>
+        {{ e.nome }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group" style="min-width:120px">
+    <label for="mes_ini">Mês inicial</label>
+    <select name="mes_ini" id="mes_ini" class="form-control">
+      {% for v, l in meses_opcoes %}
+      <option value="{{ v }}" {% if v == mes_ini_selecionado %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group" style="min-width:120px">
+    <label for="mes_fim">Mês final</label>
+    <select name="mes_fim" id="mes_fim" class="form-control">
+      {% for v, l in meses_opcoes %}
+      <option value="{{ v }}" {% if v == mes_fim_selecionado %}selected{% endif %}>{{ l }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {% if medicos_disponiveis %}
+  <div class="filtro-group">
+    <label for="medico">Médico</label>
+    <select name="medico" id="medico" class="form-control">
+      <option value="">Todos</option>
+      {% for m in medicos_disponiveis %}
+      <option value="{{ m }}" {% if m == filtro_medico %}selected{% endif %}>{{ m|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  <div class="filtro-actions">
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    <a href="{% url 'cadastro:indicadores_especialidade' %}" class="btn btn-secondary">Limpar</a>
+  </div>
+</form>
+
+{% if not especialidade_selecionada %}
+<div class="dash-empty">
+  <div class="dash-empty-icon">🔍</div>
+  <p>Selecione uma especialidade para visualizar a produção.</p>
+</div>
+
+{% elif not series %}
+<div class="dash-empty">
+  <div class="dash-empty-icon">📭</div>
+  <p>Nenhum dado de produção encontrado para o período selecionado.</p>
+</div>
+
+{% else %}
+
+<div class="prestador-header">
+  <div>
+    <div class="prestador-header-nome">{{ especialidade_obj.nome }}</div>
+    <div class="prestador-header-esp">
+      {{ medicos_disponiveis|length }} médico{{ medicos_disponiveis|length|pluralize }} cadastrado{{ medicos_disponiveis|length|pluralize }}
+      {% if filtro_medico %} · Filtrado: {{ filtro_medico|title }}{% endif %}
+    </div>
+  </div>
+  <span class="meta-pill">{{ series|length }} agenda{{ series|length|pluralize }} · {{ periodo_label }}</span>
+</div>
+
+<div class="charts-grid" id="charts-grid"></div>
+
+<script>
+const SERIES_DATA = {{ series_json|safe }};
+const LABELS      = {{ labels_json|safe }};
+</script>
+{% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+document.getElementById('especialidade').addEventListener('change', () => {
+  document.getElementById('form-filtros').submit();
+});
+
+{% if series %}
+const C_PROD = '#007EFF';
+const C_FILL = 'rgba(0,126,255,.07)';
+const grid   = document.getElementById('charts-grid');
+
+SERIES_DATA.forEach(serie => {
+  const totalProd = serie.producao.reduce((a,b)=>a+(b||0),0);
+  const card = document.createElement('div');
+  card.className = 'chart-card';
+  card.innerHTML = `
+    <div class="chart-card-header">
+      <div>
+        <div class="chart-card-title">${serie.descricao}</div>
+      </div>
+    </div>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="legend-line-solid"></div> Produção mensal</div>
+    </div>
+    <div class="chart-wrap"><canvas id="c-${serie.id.replace(/\s/g,'_')}"></canvas></div>
+    <div class="chart-stats">
+      <div class="chart-stat">
+        <span class="chart-stat-label">Total acumulado</span>
+        <span class="chart-stat-value">${totalProd.toLocaleString('pt-BR')}</span>
+      </div>
+      <div class="chart-stat">
+        <span class="chart-stat-label">Média mensal</span>
+        <span class="chart-stat-value">${LABELS.length ? Math.round(totalProd/LABELS.length).toLocaleString('pt-BR') : '—'}</span>
+      </div>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  new Chart(document.getElementById(`c-${serie.id.replace(/\s/g,'_')}`), {
+    type: 'line',
+    data: {
+      labels: LABELS,
+      datasets: [{
+        label: 'Produção mensal',
+        data: serie.producao,
+        borderColor: C_PROD,
+        backgroundColor: C_FILL,
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: C_PROD,
+        fill: true,
+        tension: 0.35,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#2A1F00',
+          titleColor: '#FFBF00',
+          bodyColor: 'rgba(255,255,255,.85)',
+          padding: 10,
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(128,112,64,.08)' }, ticks: { font: { family: "'Lato',sans-serif", size: 11 }, color: '#6B5B2E' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(128,112,64,.08)' }, ticks: { font: { family: "'Lato',sans-serif", size: 11 }, color: '#6B5B2E', precision: 0 } }
+      }
+    }
+  });
+});
+{% endif %}
+</script>
+{% endblock %}

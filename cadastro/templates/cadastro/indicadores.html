@@ -30,6 +30,22 @@
     </div>
   </a>
 
+  <a href="{% url 'cadastro:indicadores_especialidade' %}" class="ind-card ind-card-gold">
+    <div class="ind-card-icon ind-card-icon-gold">🩺</div>
+    <div>
+      <p class="ind-card-label">Dashboard</p>
+      <h2 class="ind-card-title">Produção por Especialidade</h2>
+    </div>
+    <p class="ind-card-desc">
+      Produção mensal agregada de todos os médicos de uma especialidade,
+      independente do prestador. Filtrável por médico e período.
+    </p>
+    <div class="ind-card-cta">
+      Abrir dashboard
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+
   <div class="ind-card ind-card-blue ind-card-disabled">
     <div class="ind-card-icon ind-card-icon-blue">🎯</div>
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -43,9 +59,7 @@
       Visão consolidada das metas contratuais de todos os prestadores —
       aderência global, ranking de cumprimento e alertas de desvio.
     </p>
-    <div class="ind-card-cta" style="opacity:.5">
-      Em breve
-    </div>
+    <div class="ind-card-cta" style="opacity:.5">Em breve</div>
   </div>
 
 </div>

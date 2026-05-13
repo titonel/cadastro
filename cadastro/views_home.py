@@ -93,32 +93,15 @@ def indicadores_prestador(request):
     """
     Dashboard de metas por prestador.
 
-    Lógica de vínculo corrigida — duas camadas:
-
-    1. Meta mensal (linha tracejada):
-       ServicoContratado.quantidade_estimada_mes do prestador selecionado,
-       agrupado por ServicoContratado.descricao (nome da agenda).
-
-    2. Produção real (linha sólida):
-       ProducaoMedico.agend_totais, somada por agenda e por mês,
-       filtrada pelos médicos cadastrados que pertencem ao prestador.
-
-       Cadeia: ProducaoMedico.nome_medico (MAIÚSCULAS no SIRESP)
-               ↔  Medico.nome_completo.upper()
-               →  Medico.prestador == prestador_selecionado
-
-       Fallback (sem médicos cadastrados para o prestador):
-       Usa ProducaoAgenda.agend_totais cruzando pelo nome da agenda,
-       igual à lógica original.  Exibe aviso no template.
-
     Filtros GET:
       prestador      — pk do Prestador
       especialidade  — pk da Especialidade
       mes_ini        — "AAAA-MM"
       mes_fim        — "AAAA-MM"
+      agenda         — nome da agenda (filtro de gráfico)
+      medico         — nome do médico em UPPER (filtro de gráfico)
     """
-    import json
-    import calendar
+    import json, calendar
     from datetime import date
     from collections import defaultdict
 
@@ -135,47 +118,40 @@ def indicadores_prestador(request):
     especialidade_pk = request.GET.get("especialidade", "")
     mes_ini_str      = request.GET.get("mes_ini", "")
     mes_fim_str      = request.GET.get("mes_fim", "")
+    filtro_agenda    = request.GET.get("agenda", "").strip()
+    filtro_medico    = request.GET.get("medico", "").strip().upper()
 
-    # ── Opções de mês a partir dos uploads confirmados ───────────────────────
+    # ── Opções de mês (deduplica por chave) ─────────────────────────────────
     uploads_qs = UploadProducao.objects.filter(
-        status="confirmado",
-        data_inicio_periodo__isnull=False,
+        status="confirmado", data_inicio_periodo__isnull=False,
     ).order_by("data_inicio_periodo")
 
-    periodos_disponiveis = []
-    seen = set()
+    periodos_disponiveis, seen = [], set()
     for u in uploads_qs:
         chave = u.data_inicio_periodo.strftime("%Y-%m")
         if chave not in seen:
             seen.add(chave)
-            periodos_disponiveis.append((
-                chave,
-                u.data_inicio_periodo.strftime("%b/%Y").capitalize(),
-            ))
+            periodos_disponiveis.append((chave, u.data_inicio_periodo.strftime("%b/%Y").capitalize()))
 
     if not periodos_disponiveis:
         hoje = date.today()
         for i in range(11, -1, -1):
             m, y = hoje.month - i, hoje.year
-            while m <= 0:
-                m += 12; y -= 1
-            chave = f"{y}-{m:02d}"
-            from calendar import month_abbr
-            periodos_disponiveis.append((chave, f"{month_abbr[m]}/{y}".capitalize()))
+            while m <= 0: m += 12; y -= 1
+            periodos_disponiveis.append((f"{y}-{m:02d}", f"{calendar.month_abbr[m]}/{y}".capitalize()))
 
-    meses_opcoes    = periodos_disponiveis
-    mes_ini_default = periodos_disponiveis[0][0]  if periodos_disponiveis else date.today().strftime("%Y-%m")
-    mes_fim_default = periodos_disponiveis[-1][0] if periodos_disponiveis else date.today().strftime("%Y-%m")
-    mes_ini_sel     = mes_ini_str or mes_ini_default
-    mes_fim_sel     = mes_fim_str or mes_fim_default
+    mes_ini_sel = mes_ini_str or (periodos_disponiveis[0][0] if periodos_disponiveis else date.today().strftime("%Y-%m"))
+    mes_fim_sel = mes_fim_str or (periodos_disponiveis[-1][0] if periodos_disponiveis else date.today().strftime("%Y-%m"))
 
     ctx_base = {
         "prestadores": prestadores,
         "especialidades": especialidades,
-        "meses_opcoes": meses_opcoes,
+        "meses_opcoes": periodos_disponiveis,
         "mes_ini_selecionado": mes_ini_sel,
         "mes_fim_selecionado": mes_fim_sel,
         "especialidade_selecionada": especialidade_pk,
+        "filtro_agenda": filtro_agenda,
+        "filtro_medico": filtro_medico,
     }
 
     if not prestador_pk:
@@ -185,131 +161,135 @@ def indicadores_prestador(request):
             "prestador_obj": None,
             "series": [], "series_json": "[]", "labels_json": "[]",
             "periodo_label": "", "aviso_sem_medicos": False,
+            "medicos_disponiveis": [], "agendas_disponiveis": [],
         })
 
     prestador_obj = get_object_or_404(Prestador, pk=prestador_pk, ativo=True)
 
     # ── Serviços contratados ─────────────────────────────────────────────────
-    servicos_qs = ServicoContratado.objects.filter(
-        prestador=prestador_obj
-    ).select_related("especialidade")
+    servicos_qs = ServicoContratado.objects.filter(prestador=prestador_obj).select_related("especialidade")
     if especialidade_pk:
         servicos_qs = servicos_qs.filter(especialidade__pk=especialidade_pk)
     servicos = list(servicos_qs)
 
     # ── Intervalo de períodos ────────────────────────────────────────────────
     periodos_no_range = [
-        (chave, label)
-        for chave, label in periodos_disponiveis
+        (chave, label) for chave, label in periodos_disponiveis
         if mes_ini_sel <= chave <= mes_fim_sel
     ] or periodos_disponiveis
 
     labels = [label for _, label in periodos_no_range]
     chaves = [chave for chave, _ in periodos_no_range]
 
-    def chave_to_ini(chave):
-        y, m = int(chave[:4]), int(chave[5:])
-        return date(y, m, 1)
-
-    ini_global = chave_to_ini(chaves[0])
-    fim_global = date(
-        int(chaves[-1][:4]),
-        int(chaves[-1][5:]),
+    ini_global = date(int(chaves[0][:4]), int(chaves[0][5:]), 1)
+    fim_global  = date(
+        int(chaves[-1][:4]), int(chaves[-1][5:]),
         calendar.monthrange(int(chaves[-1][:4]), int(chaves[-1][5:]))[1],
     )
 
-    uploads_no_range = UploadProducao.objects.filter(
+    # ── Upload representativo por mês (o mais recente de cada mês) ───────────
+    # Evita acumulação quando há múltiplos uploads para o mesmo mês
+    upload_por_mes = {}  # chave_mes → upload_pk mais recente
+    for u in UploadProducao.objects.filter(
         status="confirmado",
         data_inicio_periodo__gte=ini_global,
         data_inicio_periodo__lte=fim_global,
-    )
+    ).order_by("data_inicio_periodo", "-enviado_em"):
+        chave = u.data_inicio_periodo.strftime("%Y-%m")
+        if chave not in upload_por_mes:   # order_by enviado_em desc → primeiro = mais recente
+            upload_por_mes[chave] = u.pk
 
-    # ── Médicos do prestador (nomes em UPPER para cruzamento) ────────────────
-    medicos_do_prestador = set(
+    uploads_representativos = list(upload_por_mes.values())
+
+    # ── Médicos do prestador ─────────────────────────────────────────────────
+    medicos_do_prestador = sorted(
         Medico.objects.filter(prestador=prestador_obj, ativo=True)
         .values_list("nome_completo", flat=True)
     )
     nomes_upper = {n.strip().upper() for n in medicos_do_prestador}
-
     aviso_sem_medicos = len(nomes_upper) == 0
 
     # ── Construir índice de produção ─────────────────────────────────────────
-    # Estrutura: { nome_agenda_upper: { chave_mes: total_agend } }
-    prod_index = defaultdict(lambda: defaultdict(int))
+    # { agenda_upper: { chave_mes: { medico_upper: valor } } }
+    # Granularidade por médico para permitir filtro posterior
+    prod_index = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
     if nomes_upper:
-        # Caminho principal: soma ProducaoMedico dos médicos do prestador
-        medicos_qs = (
-            ProducaoMedico.objects
-            .filter(agenda__upload__in=uploads_no_range)
-            .select_related("agenda__upload")
-        )
-        for pm in medicos_qs:
-            if pm.nome_medico.strip().upper() in nomes_upper:
-                chave_mes  = pm.agenda.upload.data_inicio_periodo.strftime("%Y-%m")
-                agenda_key = pm.agenda.nome_agenda.strip().upper()
-                prod_index[agenda_key][chave_mes] += pm.agend_totais
+        for pm in ProducaoMedico.objects.filter(
+            agenda__upload__in=uploads_representativos,
+        ).select_related("agenda__upload"):
+            nome_up = pm.nome_medico.strip().upper()
+            if nome_up not in nomes_upper:
+                continue
+            chave_mes  = pm.agenda.upload.data_inicio_periodo.strftime("%Y-%m")
+            agenda_key = pm.agenda.nome_agenda.strip().upper()
+            prod_index[agenda_key][chave_mes][nome_up] += pm.agend_totais
     else:
-        # Fallback: usa ProducaoAgenda agregada (sem filtro por médico)
-        for ag in ProducaoAgenda.objects.filter(upload__in=uploads_no_range).select_related("upload"):
+        for ag in ProducaoAgenda.objects.filter(
+            upload__in=uploads_representativos,
+        ).select_related("upload"):
             chave_mes  = ag.upload.data_inicio_periodo.strftime("%Y-%m")
             agenda_key = ag.nome_agenda.strip().upper()
-            prod_index[agenda_key][chave_mes] += ag.agend_totais
+            prod_index[agenda_key][chave_mes]["__total__"] += ag.agend_totais
 
-    # ── Pré-carregar mapeamentos de todos os serviços de uma vez ─────────────
-    # Estrutura: { servico_pk: [nome_agenda_upper, ...] }
-    mapeamentos_raw = AgendaMapeamento.objects.filter(
-        servico__prestador=prestador_obj
-    ).values_list("servico_id", "nome_agenda")
+    # ── Listas para filtros dinâmicos ────────────────────────────────────────
+    agendas_disponiveis = sorted({
+        ag for ag in prod_index.keys()
+    })
+    medicos_disponiveis = sorted(medicos_do_prestador)
 
+    # ── Mapeamentos ──────────────────────────────────────────────────────────
     mapeamentos_por_servico = defaultdict(list)
-    for srv_pk, nome in mapeamentos_raw:
+    for srv_pk, nome in AgendaMapeamento.objects.filter(
+        servico__prestador=prestador_obj
+    ).values_list("servico_id", "nome_agenda"):
         mapeamentos_por_servico[srv_pk].append(nome.strip().upper())
 
-    # ── Montar séries por serviço contratado ─────────────────────────────────
+    # ── Montar séries ────────────────────────────────────────────────────────
     tipo_labels = {
-        "consulta":        "Consulta Ambulatorial",
-        "cirurgia_pequeno":"Cirurgia de Pequeno Porte",
-        "cirurgia_medio":  "Cirurgia de Médio Porte",
-        "exame":           "Exame / Laudo",
-        "outro":           "Outro",
+        "consulta": "Consulta", "cirurgia_pequeno": "Cirurgia P. Porte",
+        "cirurgia_medio": "Cirurgia M. Porte", "exame": "Exame / Laudo", "outro": "Outro",
     }
+
+    # Filtro de agenda aplicado ao conjunto de chaves_agenda
+    def filtrar_agendas(chaves_ag):
+        if filtro_agenda:
+            return [k for k in chaves_ag if filtro_agenda.upper() in k]
+        return chaves_ag
+
+    # Filtro de médico aplicado ao somar o índice
+    def somar_mes(agenda_key, chave_mes):
+        medicos_mes = prod_index[agenda_key].get(chave_mes, {})
+        if filtro_medico:
+            return sum(v for k, v in medicos_mes.items() if filtro_medico in k)
+        return sum(medicos_mes.values())
 
     series = []
     for srv in servicos:
-        # Chaves de agenda a somar: mapeamentos cadastrados + fallback (descricao)
-        chaves_agenda = mapeamentos_por_servico.get(srv.pk)
-        if not chaves_agenda:
-            # Sem mapeamento: tenta pelo próprio nome do serviço
-            chaves_agenda = [srv.descricao.strip().upper()]
+        chaves_agenda = mapeamentos_por_servico.get(srv.pk) or [srv.descricao.strip().upper()]
+        chaves_agenda = filtrar_agendas(chaves_agenda)
 
-        producao_por_mes = []
-        for chave in chaves:
-            total = sum(
-                prod_index[ag_key].get(chave, 0)
-                for ag_key in chaves_agenda
-            )
-            producao_por_mes.append(total)
+        producao_por_mes = [
+            sum(somar_mes(ag_key, chave) for ag_key in chaves_agenda)
+            for chave in chaves
+        ]
 
         agendas_mapeadas = [
-            m.nome_agenda
-            for m in AgendaMapeamento.objects.filter(servico=srv).order_by("nome_agenda")
+            m.nome_agenda for m in AgendaMapeamento.objects.filter(servico=srv).order_by("nome_agenda")
         ] or [srv.descricao]
 
         series.append({
-            "id":             srv.pk,
+            "id": srv.pk,
             "descricao":      srv.descricao or srv.get_tipo_servico_display(),
             "tipo_label":     tipo_labels.get(srv.tipo_servico, srv.tipo_servico),
             "meta_fixa":      srv.quantidade_estimada_mes,
             "producao":       producao_por_mes,
-            "medicos":        sorted(medicos_do_prestador),
             "agendas_mapeadas": agendas_mapeadas,
             "tem_mapeamento": bool(mapeamentos_por_servico.get(srv.pk)),
         })
 
     periodo_label = (
-        f"{periodos_no_range[0][1]} – {periodos_no_range[-1][1]}"
-        if periodos_no_range else "—"
+        f"{periodos_no_range[0][1]} – {periodos_no_range[-1][1]}" if periodos_no_range else "—"
     )
 
     return render(request, "cadastro/indicadores_prestador.html", {
@@ -317,13 +297,160 @@ def indicadores_prestador(request):
         "prestador_selecionado": prestador_pk,
         "prestador_obj": prestador_obj,
         "series": series,
-        "series_json": json.dumps(series, ensure_ascii=False),
-        "labels_json": json.dumps(labels, ensure_ascii=False),
+        "series_json":  json.dumps(series, ensure_ascii=False),
+        "labels_json":  json.dumps(labels, ensure_ascii=False),
         "periodo_label": periodo_label,
         "aviso_sem_medicos": aviso_sem_medicos,
-        "medicos_do_prestador": sorted(medicos_do_prestador),
+        "medicos_do_prestador": medicos_do_prestador,
+        "medicos_disponiveis":  medicos_disponiveis,
+        "agendas_disponiveis":  agendas_disponiveis,
     })
 
+
+
+def indicadores_especialidade(request):
+    """
+    Dashboard de produção por especialidade — independente de prestador.
+    Agrega ProducaoMedico de todos os médicos de uma especialidade,
+    cruzando via Medico.especialidades (M2M).
+    """
+    import json, calendar
+    from datetime import date
+    from collections import defaultdict
+
+    from .models import (
+        Especialidade, Medico, UploadProducao,
+        ProducaoMedico, ProducaoAgenda, AgendaMapeamento,
+    )
+
+    especialidades    = Especialidade.objects.filter(ativa=True).order_by("nome")
+    especialidade_pk  = request.GET.get("especialidade", "")
+    mes_ini_str       = request.GET.get("mes_ini", "")
+    mes_fim_str       = request.GET.get("mes_fim", "")
+    filtro_medico     = request.GET.get("medico", "").strip().upper()
+
+    # ── Opções de mês ────────────────────────────────────────────────────────
+    uploads_qs = UploadProducao.objects.filter(
+        status="confirmado", data_inicio_periodo__isnull=False,
+    ).order_by("data_inicio_periodo")
+
+    periodos_disponiveis, seen = [], set()
+    for u in uploads_qs:
+        chave = u.data_inicio_periodo.strftime("%Y-%m")
+        if chave not in seen:
+            seen.add(chave)
+            periodos_disponiveis.append((chave, u.data_inicio_periodo.strftime("%b/%Y").capitalize()))
+
+    mes_ini_sel = mes_ini_str or (periodos_disponiveis[0][0]  if periodos_disponiveis else date.today().strftime("%Y-%m"))
+    mes_fim_sel = mes_fim_str or (periodos_disponiveis[-1][0] if periodos_disponiveis else date.today().strftime("%Y-%m"))
+
+    ctx_base = {
+        "especialidades": especialidades,
+        "meses_opcoes": periodos_disponiveis,
+        "mes_ini_selecionado": mes_ini_sel,
+        "mes_fim_selecionado": mes_fim_sel,
+        "especialidade_selecionada": especialidade_pk,
+        "filtro_medico": filtro_medico,
+    }
+
+    if not especialidade_pk:
+        return render(request, "cadastro/indicadores_especialidade.html", {
+            **ctx_base,
+            "especialidade_obj": None,
+            "series": [], "series_json": "[]", "labels_json": "[]",
+            "periodo_label": "", "medicos_disponiveis": [],
+        })
+
+    especialidade_obj = get_object_or_404(Especialidade, pk=especialidade_pk)
+
+    # ── Intervalo ────────────────────────────────────────────────────────────
+    periodos_no_range = [
+        (c, l) for c, l in periodos_disponiveis if mes_ini_sel <= c <= mes_fim_sel
+    ] or periodos_disponiveis
+
+    labels = [l for _, l in periodos_no_range]
+    chaves = [c for c, _ in periodos_no_range]
+
+    ini_global = date(int(chaves[0][:4]), int(chaves[0][5:]), 1)
+    fim_global  = date(
+        int(chaves[-1][:4]), int(chaves[-1][5:]),
+        calendar.monthrange(int(chaves[-1][:4]), int(chaves[-1][5:]))[1],
+    )
+
+    # Upload representativo por mês (mais recente)
+    upload_por_mes = {}
+    for u in UploadProducao.objects.filter(
+        status="confirmado",
+        data_inicio_periodo__gte=ini_global,
+        data_inicio_periodo__lte=fim_global,
+    ).order_by("data_inicio_periodo", "-enviado_em"):
+        chave = u.data_inicio_periodo.strftime("%Y-%m")
+        if chave not in upload_por_mes:
+            upload_por_mes[chave] = u.pk
+
+    uploads_rep = list(upload_por_mes.values())
+
+    # ── Médicos desta especialidade ──────────────────────────────────────────
+    medicos_esp = Medico.objects.filter(
+        especialidades=especialidade_obj, ativo=True,
+    ).values_list("nome_completo", flat=True)
+    nomes_upper = {n.strip().upper() for n in medicos_esp}
+    medicos_disponiveis = sorted(medicos_esp)
+
+    # ── Índice de produção: { agenda_upper: { chave_mes: { medico: val } } } ─
+    prod_index = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
+    if nomes_upper:
+        for pm in ProducaoMedico.objects.filter(
+            agenda__upload__in=uploads_rep,
+        ).select_related("agenda__upload"):
+            nome_up = pm.nome_medico.strip().upper()
+            if nome_up not in nomes_upper:
+                continue
+            chave_mes  = pm.agenda.upload.data_inicio_periodo.strftime("%Y-%m")
+            agenda_key = pm.agenda.nome_agenda.strip().upper()
+            prod_index[agenda_key][chave_mes][nome_up] += pm.agend_totais
+    else:
+        # Sem médicos cadastrados: usa ProducaoAgenda para as agendas da especialidade
+        for ag in ProducaoAgenda.objects.filter(upload__in=uploads_rep).select_related("upload"):
+            chave_mes  = ag.upload.data_inicio_periodo.strftime("%Y-%m")
+            agenda_key = ag.nome_agenda.strip().upper()
+            prod_index[agenda_key][chave_mes]["__total__"] += ag.agend_totais
+
+    # ── Agrupar por agenda (cada agenda = uma série / gráfico) ───────────────
+    def somar_mes(agenda_key, chave_mes):
+        medicos_mes = prod_index[agenda_key].get(chave_mes, {})
+        if filtro_medico:
+            return sum(v for k, v in medicos_mes.items() if filtro_medico in k)
+        return sum(medicos_mes.values())
+
+    agendas_com_dados = [ag for ag in sorted(prod_index.keys()) if any(
+        somar_mes(ag, c) > 0 for c in chaves
+    )]
+
+    series = []
+    for ag_key in agendas_com_dados:
+        producao_por_mes = [somar_mes(ag_key, c) for c in chaves]
+        series.append({
+            "id":        ag_key,
+            "descricao": ag_key.title(),
+            "producao":  producao_por_mes,
+            "meta_fixa": 0,           # sem meta quando visão é por especialidade
+        })
+
+    periodo_label = (
+        f"{periodos_no_range[0][1]} – {periodos_no_range[-1][1]}" if periodos_no_range else "—"
+    )
+
+    return render(request, "cadastro/indicadores_especialidade.html", {
+        **ctx_base,
+        "especialidade_obj": especialidade_obj,
+        "series": series,
+        "series_json":  json.dumps(series, ensure_ascii=False),
+        "labels_json":  json.dumps(labels, ensure_ascii=False),
+        "periodo_label": periodo_label,
+        "medicos_disponiveis": medicos_disponiveis,
+    })
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Módulo Relatório

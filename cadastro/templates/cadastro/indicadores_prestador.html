@@ -55,9 +55,29 @@
     </select>
   </div>
 
+  <div class="filtro-group">
+    <label for="agenda">Agenda</label>
+    <select name="agenda" id="agenda" class="form-control">
+      <option value="">Todas as agendas</option>
+      {% for ag in agendas_disponiveis %}
+      <option value="{{ ag }}" {% if ag == filtro_agenda %}selected{% endif %}>{{ ag|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filtro-group">
+    <label for="medico">Médico</label>
+    <select name="medico" id="medico" class="form-control">
+      <option value="">Todos os médicos</option>
+      {% for m in medicos_disponiveis %}
+      <option value="{{ m }}" {% if m == filtro_medico %}selected{% endif %}>{{ m|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
   <div class="filtro-actions">
     <button type="submit" class="btn btn-primary">Filtrar</button>
-    <a href="{% url 'cadastro:indicadores_prestador' %}" class="btn btn-secondary">Limpar</a>
+    <a href="{% url 'cadastro:indicadores_prestador' %}{% if prestador_selecionado %}?prestador={{ prestador_selecionado }}{% endif %}" class="btn btn-secondary">Limpar</a>
   </div>
 </form>
 
@@ -133,11 +153,9 @@ const LABELS = {{ labels_json|safe }};
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 /* ── Filtros: auto-submit ao trocar prestador ou especialidade ── */
-document.getElementById('prestador').addEventListener('change', () => {
-  document.getElementById('form-filtros').submit();
-});
-document.getElementById('especialidade').addEventListener('change', () => {
-  document.getElementById('form-filtros').submit();
+['prestador','especialidade'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', () => document.getElementById('form-filtros').submit());
 });
 
 {% if series %}
