@@ -1,0 +1,90 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Médicos — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">👨‍⚕️ Médicos Credenciados</h1>
+  <a href="{% url 'cadastro:medico_create' %}" class="btn btn-primary">+ Novo Médico</a>
+</div>
+
+<form method="get" class="search-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Nome, CRM ou CPF…" class="form-control">
+  <select name="especialidade" class="form-control">
+    <option value="">Todas as especialidades</option>
+    {% for e in especialidades %}
+    <option value="{{ e.pk }}" {% if e.pk|stringformat:"s" == especialidade_selecionada %}selected{% endif %}>{{ e.nome }}</option>
+    {% endfor %}
+  </select>
+  <select name="prestador" class="form-control">
+    <option value="">Todos os prestadores</option>
+    {% for p in prestadores %}
+    <option value="{{ p.pk }}" {% if p.pk|stringformat:"s" == prestador_selecionado %}selected{% endif %}>{{ p.nome_empresa }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrar</button>
+  <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary">Limpar</a>
+</form>
+
+{% if medicos %}
+<div class="card" style="padding:0">
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52px"></th>
+          <th>Nome</th>
+          <th>CRM</th>
+          <th>RQE</th>
+          <th>Especialidades</th>
+          <th>Prestador</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in medicos %}
+        <tr>
+          <td style="padding:.5rem .85rem">
+            {% if m.foto %}
+            <img src="{{ m.foto.url }}" alt="{{ m.nome_completo }}"
+                 style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--color-border)">
+            {% else %}
+            <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--amber),var(--amber-dark));
+                        display:flex;align-items:center;justify-content:center;color:var(--color-text);font-weight:700;font-size:.875rem">
+              {{ m.nome_completo|first }}
+            </div>
+            {% endif %}
+          </td>
+          <td><a href="{% url 'cadastro:medico_detail' m.pk %}" style="font-weight:700;color:var(--color-text)">{{ m.nome_completo }}</a></td>
+          <td>{{ m.crm|default:"—" }}</td>
+          <td>{{ m.rqe|default:"—" }}</td>
+          <td>
+            {% for e in m.especialidades.all %}
+            <span class="badge badge-esp">{{ e.nome }}</span>
+            {% empty %}—{% endfor %}
+          </td>
+          <td style="font-size:.8125rem;color:var(--color-text-muted)">{{ m.prestador.nome_empresa|default:"—" }}</td>
+          <td>
+            {% if m.ativo %}<span class="badge badge-active">Ativo</span>
+            {% else %}<span class="badge badge-inactive">Inativo</span>{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:.4rem">
+              <a href="{% url 'cadastro:medico_edit' m.pk %}" class="btn btn-secondary btn-sm">Editar</a>
+              <a href="{% url 'cadastro:medico_delete' m.pk %}" class="btn btn-danger btn-sm">Excluir</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p style="margin-top:.75rem;font-size:.8125rem;color:var(--color-text-muted)">{{ medicos|length }} médico{{ medicos|length|pluralize }} encontrado{{ medicos|length|pluralize }}.</p>
+{% else %}
+<div style="text-align:center;padding:4rem 2rem;color:var(--color-text-muted)">
+  <div style="font-size:3rem;margin-bottom:.75rem">👨‍⚕️</div>
+  <p>Nenhum médico encontrado. <a href="{% url 'cadastro:medico_create' %}">Cadastrar o primeiro</a>.</p>
+</div>
+{% endif %}
+{% endblock %}

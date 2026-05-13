@@ -1,0 +1,238 @@
+{% extends "cadastro/base.html" %}
+{% load static %}
+{% block title %}{% if action == "Novo" %}Novo Médico{% else %}Editar {{ medico.nome_completo }}{% endif %} — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{% if action == "Novo" %}👨‍⚕️ Novo Médico{% else %}✏️ Editar — {{ medico.nome_completo }}{% endif %}</h1>
+  <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary btn-sm">← Médicos</a>
+</div>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+
+  {# ── Dados Pessoais ── #}
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="form-section-title">Dados Pessoais</div>
+    <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+
+      <div class="form-group full">
+        <label for="{{ form.nome_completo.id_for_label }}">{{ form.nome_completo.label }}</label>
+        {{ form.nome_completo }}
+        {% if form.nome_completo.errors %}<p style="color:var(--color-error);font-size:.75rem">{{ form.nome_completo.errors.0 }}</p>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.cpf.id_for_label }}">CPF</label>
+        {{ form.cpf }}
+        {% if form.cpf.errors %}<p style="color:var(--color-error);font-size:.75rem">{{ form.cpf.errors.0 }}</p>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.crm.id_for_label }}">CRM</label>
+        {{ form.crm }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.rqe.id_for_label }}">RQE <span style="font-weight:300;font-size:.75rem">(opcional)</span></label>
+        {{ form.rqe }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.telefone.id_for_label }}">Telefone / WhatsApp</label>
+        {{ form.telefone }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.email.id_for_label }}">E-mail</label>
+        {{ form.email }}
+      </div>
+    </div>
+
+    {# ── Foto ── #}
+    <div style="margin-top:1.25rem;display:flex;align-items:flex-start;gap:1.25rem;flex-wrap:wrap">
+      <div id="foto-preview-wrap" style="flex-shrink:0">
+        {% if medico.foto %}
+        <img id="foto-preview" src="{{ medico.foto.url }}" alt="Foto atual"
+             style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--amber)">
+        {% else %}
+        <div id="foto-placeholder" style="width:96px;height:96px;border-radius:50%;
+             background:linear-gradient(135deg,var(--amber),var(--amber-dark));
+             display:flex;align-items:center;justify-content:center;
+             font-size:2.25rem;color:var(--color-text)">👤</div>
+        <img id="foto-preview" src="#" alt="Preview"
+             style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--amber);display:none">
+        {% endif %}
+      </div>
+      <div class="form-group" style="flex:1;min-width:200px">
+        <label for="{{ form.foto.id_for_label }}">Foto do Médico</label>
+        {{ form.foto }}
+        <p style="font-size:.75rem;color:var(--color-text-muted);margin-top:.25rem">JPG ou PNG · Recomendado: 300×300 px</p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Endereço ── #}
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="form-section-title">Endereço</div>
+    <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+
+      <div class="form-group" style="max-width:160px">
+        <label for="{{ form.cep.id_for_label }}">CEP</label>
+        <div style="display:flex;gap:.4rem;align-items:center">
+          {{ form.cep }}
+          <button type="button" id="btn-buscar-cep" class="btn btn-accent btn-sm" title="Buscar CEP">🔍</button>
+        </div>
+        <p id="cep-msg" style="font-size:.72rem;margin-top:.2rem"></p>
+      </div>
+
+      <div class="form-group full">
+        <label for="{{ form.logradouro.id_for_label }}">Logradouro</label>
+        {{ form.logradouro }}
+      </div>
+
+      <div class="form-group" style="max-width:120px">
+        <label for="{{ form.numero.id_for_label }}">Número</label>
+        {{ form.numero }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.complemento.id_for_label }}">Complemento</label>
+        {{ form.complemento }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.bairro.id_for_label }}">Bairro</label>
+        {{ form.bairro }}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.cidade.id_for_label }}">Cidade</label>
+        {{ form.cidade }}
+      </div>
+
+      <div class="form-group" style="max-width:80px">
+        <label for="{{ form.estado.id_for_label }}">UF</label>
+        {{ form.estado }}
+      </div>
+    </div>
+  </div>
+
+  {# ── Vínculo profissional ── #}
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="form-section-title">Vínculo Profissional</div>
+
+    <div class="form-group" style="margin-bottom:1rem">
+      <label for="{{ form.prestador.id_for_label }}">Empresa Prestadora</label>
+      {{ form.prestador }}
+    </div>
+
+    <div class="form-group">
+      <label>Especialidades no AME</label>
+      <ul class="checkbox-list">
+        {% for esp in form.especialidades %}
+        <li>{{ esp }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  {# ── Status ── #}
+  <div class="card" style="margin-bottom:1.5rem">
+    <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.9rem">
+      {{ form.ativo }}
+      <span>Médico ativo no AME</span>
+    </label>
+  </div>
+
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+    <button type="submit" class="btn btn-primary">💾 Salvar</button>
+    <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary">Cancelar</a>
+  </div>
+</form>
+
+<script>
+/* ── Preview da foto ── */
+document.getElementById('{{ form.foto.id_for_label }}').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('foto-preview');
+    const ph  = document.getElementById('foto-placeholder');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    if (ph) ph.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+/* ── Busca de CEP via ViaCEP (API gratuita, sem autenticação) ── */
+const cepInput  = document.getElementById('{{ form.cep.id_for_label }}');
+const btnCep    = document.getElementById('btn-buscar-cep');
+const cepMsg    = document.getElementById('cep-msg');
+
+function preencherEndereco(data) {
+  document.getElementById('{{ form.logradouro.id_for_label }}').value = data.logradouro || '';
+  document.getElementById('{{ form.bairro.id_for_label }}').value    = data.bairro     || '';
+  document.getElementById('{{ form.cidade.id_for_label }}').value    = data.localidade || '';
+  document.getElementById('{{ form.estado.id_for_label }}').value    = data.uf         || '';
+  document.getElementById('{{ form.numero.id_for_label }}').focus();
+}
+
+async function buscarCep() {
+  const cep = cepInput.value.replace(/\D/g, '');
+  if (cep.length !== 8) {
+    cepMsg.textContent = 'CEP inválido — informe 8 dígitos.';
+    cepMsg.style.color = 'var(--color-error)';
+    return;
+  }
+  btnCep.disabled = true;
+  cepMsg.textContent = 'Buscando…';
+  cepMsg.style.color = 'var(--color-text-muted)';
+  try {
+    const res  = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const data = await res.json();
+    if (data.erro) {
+      cepMsg.textContent = 'CEP não encontrado.';
+      cepMsg.style.color = 'var(--color-error)';
+    } else {
+      preencherEndereco(data);
+      cepMsg.textContent = '✓ Endereço preenchido automaticamente.';
+      cepMsg.style.color = 'var(--color-success)';
+    }
+  } catch {
+    cepMsg.textContent = 'Erro ao consultar o CEP. Verifique sua conexão.';
+    cepMsg.style.color = 'var(--color-error)';
+  } finally {
+    btnCep.disabled = false;
+  }
+}
+
+btnCep.addEventListener('click', buscarCep);
+
+/* Também aciona ao sair do campo CEP (blur) se tiver 8 dígitos */
+cepInput.addEventListener('blur', () => {
+  if (cepInput.value.replace(/\D/g,'').length === 8) buscarCep();
+});
+
+/* Máscara CEP: 00000-000 */
+cepInput.addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 8);
+  if (v.length > 5) v = v.slice(0,5) + '-' + v.slice(5);
+  this.value = v;
+});
+
+/* Máscara CPF: 000.000.000-00 */
+const cpfInput = document.getElementById('{{ form.cpf.id_for_label }}');
+if (cpfInput) {
+  cpfInput.addEventListener('input', function () {
+    let v = this.value.replace(/\D/g,'').slice(0,11);
+    if (v.length > 9) v = v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6,9)+'-'+v.slice(9);
+    else if (v.length > 6) v = v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6);
+    else if (v.length > 3) v = v.slice(0,3)+'.'+v.slice(3);
+    this.value = v;
+  });
+}
+</script>
+{% endblock %}

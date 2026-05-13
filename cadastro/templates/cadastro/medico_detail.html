@@ -1,0 +1,120 @@
+{% extends "cadastro/base.html" %}
+{% block title %}{{ medico.nome_completo }} — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">👨‍⚕️ {{ medico.nome_completo }}</h1>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <a href="{% url 'cadastro:medico_edit' medico.pk %}" class="btn btn-accent btn-sm">✏️ Editar</a>
+    <a href="{% url 'cadastro:medico_delete' medico.pk %}" class="btn btn-danger btn-sm">Excluir</a>
+    <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary btn-sm">← Médicos</a>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:auto 1fr;gap:1.5rem;align-items:start;margin-bottom:1.5rem;flex-wrap:wrap">
+
+  {# ── Foto ── #}
+  <div style="flex-shrink:0">
+    {% if medico.foto %}
+    <img src="{{ medico.foto.url }}" alt="{{ medico.nome_completo }}"
+         style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:4px solid var(--amber);box-shadow:0 4px 16px rgba(128,112,64,.2)">
+    {% else %}
+    <div style="width:120px;height:120px;border-radius:50%;
+                background:linear-gradient(135deg,var(--amber),var(--amber-dark));
+                display:flex;align-items:center;justify-content:center;
+                font-size:3rem;color:var(--color-text);
+                border:4px solid var(--amber)">{{ medico.nome_completo|first }}</div>
+    {% endif %}
+  </div>
+
+  {# ── Identificação ── #}
+  <div class="card" style="margin:0">
+    <div class="detail-grid">
+      <div>
+        <div class="detail-label">CRM</div>
+        <div class="detail-value">{{ medico.crm|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="detail-label">RQE</div>
+        <div class="detail-value">{{ medico.rqe|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="detail-label">CPF</div>
+        <div class="detail-value">{{ medico.cpf|default:"—" }}</div>
+      </div>
+      <div>
+        <div class="detail-label">Status</div>
+        <div class="detail-value">
+          {% if medico.ativo %}<span class="badge badge-active">Ativo</span>
+          {% else %}<span class="badge badge-inactive">Inativo</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+
+  {# ── Contato ── #}
+  <div class="card">
+    <div class="form-section-title" style="margin-bottom:.75rem">Contato</div>
+    <div class="detail-grid" style="grid-template-columns:1fr">
+      <div>
+        <div class="detail-label">Telefone / WhatsApp</div>
+        <div class="detail-value">
+          {% if medico.telefone %}
+          <a href="tel:{{ medico.telefone }}" style="color:var(--color-accent)">{{ medico.telefone }}</a>
+          {% else %}—{% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="detail-label">E-mail</div>
+        <div class="detail-value">
+          {% if medico.email %}
+          <a href="mailto:{{ medico.email }}" style="color:var(--color-accent)">{{ medico.email }}</a>
+          {% else %}—{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Vínculo ── #}
+  <div class="card">
+    <div class="form-section-title" style="margin-bottom:.75rem">Vínculo Profissional</div>
+    <div>
+      <div class="detail-label">Empresa Prestadora</div>
+      <div class="detail-value">
+        {% if medico.prestador %}
+        <a href="{% url 'cadastro:prestador_detail' medico.prestador.pk %}">{{ medico.prestador.nome_empresa }}</a>
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    <div style="margin-top:.75rem">
+      <div class="detail-label">Especialidades no AME</div>
+      <div class="detail-value" style="margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.4rem">
+        {% for e in medico.especialidades.all %}
+        <span class="badge badge-esp">{{ e.nome }}</span>
+        {% empty %}<span style="color:var(--color-text-muted)">—</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Endereço ── #}
+{% if medico.endereco_completo %}
+<div class="card">
+  <div class="form-section-title" style="margin-bottom:.75rem">Endereço</div>
+  <p style="font-size:.9375rem">{{ medico.endereco_completo }}</p>
+  {% if medico.cep %}
+  <a href="https://maps.google.com/?q={{ medico.endereco_completo|urlencode }}"
+     target="_blank" rel="noopener"
+     class="btn btn-secondary btn-sm" style="margin-top:.75rem">🗺 Ver no mapa</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<p style="margin-top:1rem;font-size:.75rem;color:var(--color-text-muted)">
+  Cadastrado em {{ medico.criado_em|date:"d/m/Y \à\s H:i" }} ·
+  Atualizado em {{ medico.atualizado_em|date:"d/m/Y \à\s H:i" }}
+</p>
+{% endblock %}

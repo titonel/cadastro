@@ -396,3 +396,82 @@ class ProducaoMedico(models.Model):
 
     def __str__(self):
         return f"{self.nome_medico} — {self.agenda.nome_agenda}"
+
+
+class Medico(models.Model):
+    """Cadastro individual de médico credenciado no AME Caraguatatuba."""
+
+    # ── Dados pessoais ──────────────────────────────────────────────────────
+    nome_completo = models.CharField("Nome Completo", max_length=300)
+    cpf = models.CharField(
+        "CPF",
+        max_length=14,
+        unique=True,
+        blank=True,
+        validators=[RegexValidator(r"^(\d{3}\.\d{3}\.\d{3}-\d{2})?$", "Formato: 000.000.000-00")],
+    )
+    crm = models.CharField("CRM", max_length=20, blank=True)
+    rqe = models.CharField("RQE", max_length=30, blank=True,
+                            help_text="Registro de Qualificação de Especialista (opcional)")
+    foto = models.ImageField(
+        "Foto", upload_to="medicos/fotos/%Y/",
+        null=True, blank=True,
+        help_text="Foto de perfil do médico (JPG ou PNG)"
+    )
+
+    # ── Contato ─────────────────────────────────────────────────────────────
+    telefone = models.CharField("Telefone / WhatsApp", max_length=20, blank=True)
+    email    = models.EmailField("E-mail", blank=True)
+
+    # ── Endereço ─────────────────────────────────────────────────────────────
+    cep         = models.CharField("CEP", max_length=9, blank=True,
+                                   validators=[RegexValidator(r"^(\d{5}-\d{3})?$", "Formato: 00000-000")])
+    logradouro  = models.CharField("Logradouro", max_length=300, blank=True)
+    numero      = models.CharField("Número",     max_length=20,  blank=True)
+    complemento = models.CharField("Complemento",max_length=100, blank=True)
+    bairro      = models.CharField("Bairro",     max_length=150, blank=True)
+    cidade      = models.CharField("Cidade",     max_length=150, blank=True)
+    estado      = models.CharField("Estado (UF)",max_length=2,   blank=True, default="SP")
+
+    # ── Vínculo profissional ─────────────────────────────────────────────────
+    especialidades = models.ManyToManyField(
+        Especialidade,
+        verbose_name="Especialidades no AME",
+        related_name="medicos",
+        blank=True,
+    )
+    prestador = models.ForeignKey(
+        Prestador,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="medicos",
+        verbose_name="Empresa Prestadora",
+    )
+
+    # ── Controle ─────────────────────────────────────────────────────────────
+    ativo      = models.BooleanField("Ativo", default=True)
+    criado_em  = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Médico"
+        verbose_name_plural = "Médicos"
+        ordering = ["nome_completo"]
+
+    def __str__(self):
+        return f"{self.nome_completo} — CRM {self.crm}" if self.crm else self.nome_completo
+
+    @property
+    def endereco_completo(self):
+        partes = []
+        if self.logradouro:
+            partes.append(f"{self.logradouro}, {self.numero}" if self.numero else self.logradouro)
+        if self.complemento:
+            partes.append(self.complemento)
+        loc = " – ".join(filter(None, [
+            self.bairro,
+            f"{self.cidade}/{self.estado}" if self.cidade else "",
+        ]))
+        if loc:
+            partes.append(f"{loc} – CEP: {self.cep}" if self.cep else loc)
+        return ", ".join(partes)

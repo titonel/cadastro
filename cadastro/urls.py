@@ -26,6 +26,13 @@ urlpatterns = [
     path("prestadores/<int:pk>/editar/", views.prestador_edit, name="prestador_edit"),
     path("prestadores/<int:pk>/excluir/", views.prestador_delete, name="prestador_delete"),
 
+    # ── Módulo: Cadastro — Médicos ────────────────────────────────────────────
+    path("medicos/", views.medico_list, name="medico_list"),
+    path("medicos/novo/", views.medico_create, name="medico_create"),
+    path("medicos/<int:pk>/", views.medico_detail, name="medico_detail"),
+    path("medicos/<int:pk>/editar/", views.medico_edit, name="medico_edit"),
+    path("medicos/<int:pk>/excluir/", views.medico_delete, name="medico_delete"),
+
     # ── Módulo: Cadastro — Importação de Contratos via PDF ────────────────────
     path("contrato/upload/", views.contrato_upload, name="contrato_upload"),
     path("contrato/<int:pk>/revisar/", views.contrato_revisao, name="contrato_revisao"),

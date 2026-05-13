@@ -1,0 +1,24 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Excluir Médico — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">🗑 Excluir Médico</h1>
+  <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary btn-sm">← Médicos</a>
+</div>
+
+<div class="card" style="max-width:520px">
+  <p style="margin-bottom:1rem">
+    Tem certeza que deseja excluir o médico <strong>{{ medico.nome_completo }}</strong>?
+    {% if medico.crm %}CRM {{ medico.crm }}{% endif %}
+  </p>
+  <p style="color:var(--color-error);font-size:.875rem;margin-bottom:1.5rem">
+    Esta ação é irreversível. Os dados do médico serão permanentemente removidos.
+  </p>
+  <form method="post" style="display:flex;gap:.75rem">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Confirmar Exclusão</button>
+    <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

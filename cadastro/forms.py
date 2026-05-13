@@ -1,6 +1,6 @@
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Prestador, ServicoContratado, Especialidade, ContratoUpload
+from .models import Prestador, ServicoContratado, Especialidade, ContratoUpload, Medico
 
 
 class PrestadorForm(forms.ModelForm):
@@ -89,3 +89,49 @@ class UploadContratoForm(forms.ModelForm):
         labels = {
             "arquivo": "Arquivo PDF do Contrato"
         }
+
+
+class MedicoForm(forms.ModelForm):
+    especialidades = forms.ModelMultipleChoiceField(
+        queryset=Especialidade.objects.filter(ativa=True),
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        label="Especialidades no AME",
+    )
+
+    class Meta:
+        model = Medico
+        fields = [
+            "nome_completo", "cpf", "crm", "rqe", "foto",
+            "telefone", "email",
+            "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "estado",
+            "especialidades", "prestador",
+            "ativo",
+        ]
+        widgets = {
+            "cpf":      forms.TextInput(attrs={"placeholder": "000.000.000-00"}),
+            "cep":      forms.TextInput(attrs={"placeholder": "00000-000", "id": "id_cep_medico"}),
+            "telefone": forms.TextInput(attrs={"placeholder": "(13) 00000-0000"}),
+            "foto":     forms.FileInput(attrs={"accept": "image/*"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .models import Prestador
+        self.fields["prestador"].queryset = Prestador.objects.filter(ativo=True).order_by("nome_empresa")
+        self.fields["prestador"].empty_label = "— selecione —"
+        self.fields["prestador"].required = False
+
+        for name, field in self.fields.items():
+            if name in ("especialidades",):
+                continue
+            if name == "ativo":
+                continue
+            field.required = name == "nome_completo"
+            widget = field.widget
+            if isinstance(widget, (forms.TextInput, forms.EmailInput,
+                                   forms.Select, forms.NumberInput,
+                                   forms.URLInput)):
+                widget.attrs.setdefault("class", "form-control")
+            elif isinstance(widget, forms.FileInput):
+                widget.attrs.setdefault("class", "form-control")

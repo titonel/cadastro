@@ -313,3 +313,80 @@ def contrato_ignorar(request, pk):
     contrato.save()
     messages.info(request, "Importação marcada como ignorada.")
     return redirect("cadastro:contrato_upload")
+
+
+# ── Módulo: Cadastro de Médicos ───────────────────────────────────────────────
+
+from .models import Medico
+from .forms import MedicoForm
+
+
+def medico_list(request):
+    qs = Medico.objects.select_related("prestador").prefetch_related("especialidades")
+
+    q = request.GET.get("q", "").strip()
+    if q:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(nome_completo__icontains=q) |
+            Q(crm__icontains=q) |
+            Q(cpf__icontains=q)
+        )
+
+    esp_pk = request.GET.get("especialidade", "")
+    if esp_pk:
+        qs = qs.filter(especialidades__pk=esp_pk)
+
+    prestador_pk = request.GET.get("prestador", "")
+    if prestador_pk:
+        qs = qs.filter(prestador__pk=prestador_pk)
+
+    from .models import Especialidade, Prestador
+    return render(request, "cadastro/medico_list.html", {
+        "medicos": qs,
+        "q": q,
+        "especialidades": Especialidade.objects.filter(ativa=True),
+        "prestadores": Prestador.objects.filter(ativo=True),
+        "especialidade_selecionada": esp_pk,
+        "prestador_selecionado": prestador_pk,
+    })
+
+
+def medico_detail(request, pk):
+    medico = get_object_or_404(Medico, pk=pk)
+    return render(request, "cadastro/medico_detail.html", {"medico": medico})
+
+
+def medico_create(request):
+    if request.method == "POST":
+        form = MedicoForm(request.POST, request.FILES)
+        if form.is_valid():
+            medico = form.save()
+            messages.success(request, f"Médico {medico.nome_completo} cadastrado com sucesso.")
+            return redirect("cadastro:medico_detail", pk=medico.pk)
+    else:
+        form = MedicoForm()
+    return render(request, "cadastro/medico_form.html", {"form": form, "action": "Novo"})
+
+
+def medico_edit(request, pk):
+    medico = get_object_or_404(Medico, pk=pk)
+    if request.method == "POST":
+        form = MedicoForm(request.POST, request.FILES, instance=medico)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Cadastro atualizado.")
+            return redirect("cadastro:medico_detail", pk=medico.pk)
+    else:
+        form = MedicoForm(instance=medico)
+    return render(request, "cadastro/medico_form.html", {"form": form, "action": "Editar", "medico": medico})
+
+
+def medico_delete(request, pk):
+    medico = get_object_or_404(Medico, pk=pk)
+    if request.method == "POST":
+        nome = medico.nome_completo
+        medico.delete()
+        messages.success(request, f"Médico {nome} removido.")
+        return redirect("cadastro:medico_list")
+    return render(request, "cadastro/medico_confirm_delete.html", {"medico": medico})
