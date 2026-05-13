@@ -26,11 +26,11 @@ class PrestadorForm(forms.ModelForm):
         widgets = {
             "data_inicio_contrato": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "data_fim_contrato": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "cnpj":              forms.TextInput(attrs={"placeholder": "00.000.000/0000-00", "data-mask": "cnpj"}),
-            "cpf_representante": forms.TextInput(attrs={"placeholder": "000.000.000-00",    "data-mask": "cpf"}),
-            "cep":               forms.TextInput(attrs={"placeholder": "00000-000",          "data-mask": "cep"}),
-            "telefone":          forms.TextInput(attrs={"placeholder": "11-99999-9999",      "data-mask": "telefone"}),
-            "telefone_testemunha": forms.TextInput(attrs={"placeholder": "11-99999-9999",    "data-mask": "telefone"}),
+            "cnpj":              forms.TextInput(attrs={"placeholder": "00.000.000/0000-00", "data-mask": "cnpj",     "maxlength": "18"}),
+            "cpf_representante": forms.TextInput(attrs={"placeholder": "000.000.000-00",    "data-mask": "cpf",      "maxlength": "14"}),
+            "cep":               forms.TextInput(attrs={"placeholder": "00000-000",          "data-mask": "cep",      "maxlength": "9"}),
+            "telefone":          forms.TextInput(attrs={"placeholder": "11-99999-9999",      "data-mask": "telefone", "maxlength": "13"}),
+            "telefone_testemunha": forms.TextInput(attrs={"placeholder": "11-99999-9999",    "data-mask": "telefone", "maxlength": "13"}),
         }
 
     # Campos cujos validators de formato devem ser removidos do form
@@ -132,9 +132,9 @@ class MedicoForm(forms.ModelForm):
             "ativo",
         ]
         widgets = {
-            "cpf":      forms.TextInput(attrs={"placeholder": "000.000.000-00",   "data-mask": "cpf"}),
-            "cep":      forms.TextInput(attrs={"placeholder": "00000-000",           "data-mask": "cep",                         "id": "id_cep_medico"}),
-            "telefone": forms.TextInput(attrs={"placeholder": "11-99999-9999",       "data-mask": "telefone"}),
+            "cpf":      forms.TextInput(attrs={"placeholder": "000.000.000-00",   "data-mask": "cpf",      "maxlength": "14"}),
+            "cep":      forms.TextInput(attrs={"placeholder": "00000-000",           "data-mask": "cep",      "maxlength": "9",  "id": "id_cep_medico"}),
+            "telefone": forms.TextInput(attrs={"placeholder": "11-99999-9999",       "data-mask": "telefone", "maxlength": "13"}),
             "foto":     forms.FileInput(attrs={"accept": "image/*"}),
         }
 
