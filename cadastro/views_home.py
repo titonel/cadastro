@@ -51,6 +51,7 @@ def acompanhamento(request):
             else:
                 from .producao_siresp import processar_upload as _processar
             _processar(upload.pk)
+            upload.refresh_from_db()
             messages.success(
                 request,
                 f"Arquivo importado com sucesso: "
