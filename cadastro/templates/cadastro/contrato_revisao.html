@@ -120,7 +120,15 @@
 
   <div class="card form-section">
     <h2 class="form-section-title">6. Especialidades Médicas</h2>
-    {{ form.especialidades }}
+    <p style="font-size:.8125rem;color:var(--color-text-muted);margin-bottom:.75rem">
+      Marque todas as especialidades atendidas por este prestador.
+      Se necessário, marque mais de uma.
+    </p>
+    <ul class="checkbox-list">
+      {% for checkbox in form.especialidades %}
+      <li>{{ checkbox }}</li>
+      {% endfor %}
+    </ul>
   </div>
 
   <div class="card form-section">

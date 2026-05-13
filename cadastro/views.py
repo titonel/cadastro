@@ -102,19 +102,32 @@ def prestador_delete(request, pk):
 # ─── Helpers ───────────────────────────────────────────────────────────────────────────
 
 def _resolver_especialidade(nome_extraido: str) -> list:
+    """
+    Resolve um ou mais nomes de especialidade para objetos Especialidade.
+    Aceita múltiplos nomes separados por vírgula ou ponto-e-vírgula.
+    Para cada nome, tenta correspondência exata, depois por token, depois cria.
+    """
     if not nome_extraido:
         return []
-    nome = nome_extraido.strip()
-    esp = Especialidade.objects.filter(nome__iexact=nome).first()
-    if not esp:
-        for token in nome.split():
-            if len(token) >= 5:
-                esp = Especialidade.objects.filter(nome__icontains=token).first()
-                if esp:
-                    break
-    if not esp:
-        esp = Especialidade.objects.create(nome=nome, ativa=True)
-    return [esp]
+
+    # Suporta separadores: vírgula, ponto-e-vírgula, " e "
+    import re
+    nomes = [n.strip() for n in re.split(r'[,;]| e ', nome_extraido) if n.strip()]
+
+    resultado = []
+    for nome in nomes:
+        esp = Especialidade.objects.filter(nome__iexact=nome).first()
+        if not esp:
+            for token in nome.split():
+                if len(token) >= 5:
+                    esp = Especialidade.objects.filter(nome__icontains=token).first()
+                    if esp:
+                        break
+        if not esp:
+            esp = Especialidade.objects.create(nome=nome, ativa=True)
+        if esp and esp not in resultado:
+            resultado.append(esp)
+    return resultado
 
 
 def _title_case_nome(nome: str) -> str:
