@@ -1,5 +1,5 @@
 """
-Producao SIRESP — parser XLS/XLSX de Cirurgias/Exames exportado do SIRESP.
+Producao SIRESP — parser XLS/XLSX/HTML de Cirurgias/Exames exportado do SIRESP.
 
 Estrutura esperada:
   B2   : "Período:DD-MM-AAAAaDD-MM-AAAA"
@@ -12,9 +12,16 @@ Diferenças em relação ao relatório de Consultas (producao_siresp.py):
   - 25 colunas (A–Y); coluna N "Atendidos" → campo `presencial`
   - Sem colunas Teleconsulta e Total-Atendidos-2 (ficam com valor 0)
   - Dados a partir da linha 9 (cabeçalhos na linha 8)
+  - No formato HTML (SIRESP): apenas 3 linhas de cabeçalho (vs. 4 no relatório de Consultas)
 
-Formatos suportados: .xlsx/.xlsm (openpyxl) e .xls legado (xlrd).
-Detecção automática por cabeçalho binário.
+Formatos suportados:
+  .xlsx / .xlsm         → openpyxl
+  .xls (legado binário) → xlrd
+  .xls (HTML disfarçado)→ pandas.read_html()
+    O SIRESP exporta arquivos .xls que são HTML puro (ISO-8859-1).
+    Detectados pelo primeiro byte '<' (0x3C).
+
+Detecção automática por cabeçalho do arquivo, não pela extensão.
 """
 
 import io
@@ -22,6 +29,7 @@ import re
 from typing import Optional
 
 import openpyxl
+import pandas as pd
 import xlrd
 
 from .models import (
@@ -29,7 +37,7 @@ from .models import (
     StatusImportacao, COLUNAS_SIRESP_EXAMES,
 )
 from .producao_siresp import (
-    _XLS_MAGIC, _PERIODO_RE, _parse_date,
+    _XLS_MAGIC, _HTML_MAGIC, _PERIODO_RE, _parse_date,
     _safe_int, _safe_float, _eh_total_geral, _preencher_campos_numericos,
 )
 
@@ -224,8 +232,65 @@ class _SheetXlsExames:
             yield dados
 
 
+class _SheetHtmlExames:
+    """
+    Wrapper para arquivos .xls de Cirurgias/Exames exportados pelo SIRESP
+    que são documentos HTML (ISO-8859-1) disfarçados de XLS.
+
+    Diferença crítica em relação ao relatório de Consultas:
+      - Apenas 3 linhas de cabeçalho hierárquico (vs. 4 em Consultas)
+      - Dados começam na linha de índice 3 (após pular os 3 cabeçalhos)
+    """
+
+    _N_CABECALHOS = 3
+
+    def __init__(self, conteudo: bytes):
+        html = conteudo.decode("iso-8859-1", errors="replace")
+        self._tables = pd.read_html(
+            io.StringIO(html),
+            header=None,
+            thousands=".",
+            decimal=",",
+        )
+        self._tabela_principal = max(self._tables, key=len)
+        self.n_colunas = len(COLUNAS_SIRESP_EXAMES)
+
+    def cell_b2(self) -> str:
+        """Varre as tabelas de metadados em busca do campo 'Período:'."""
+        for table in self._tables:
+            for valor in table.values.flatten():
+                if isinstance(valor, str) and "Período:" in valor:
+                    return valor
+        return ""
+
+    def iter_linhas(self):
+        """Itera os dados após os 3 cabeçalhos hierárquicos do SIRESP."""
+        df = self._tabela_principal.iloc[self._N_CABECALHOS:].reset_index(drop=True)
+        n = min(self.n_colunas, df.shape[1])
+        for _, row in df.iterrows():
+            dados = {}
+            for col_idx in range(n):
+                nome = COLUNAS_SIRESP_EXAMES[col_idx]
+                val = row.iloc[col_idx]
+                if pd.isna(val):
+                    val = ""
+                elif not isinstance(val, str):
+                    val = str(val)
+                dados[nome] = val
+            yield dados
+
+
 def _abrir_sheet_exames(conteudo: bytes):
-    if conteudo[:8] == _XLS_MAGIC:
+    """
+    Detecta o formato pelo cabeçalho do arquivo e retorna o wrapper correto.
+
+      HTML (SIRESP): primeiro byte == '<'            → _SheetHtmlExames
+      XLS   (BIFF) : primeiros 8 bytes == _XLS_MAGIC → _SheetXlsExames
+      Qualquer outro caso (ZIP/OOXML)               → _SheetXlsxExames
+    """
+    if conteudo[:1] == _HTML_MAGIC:
+        return _SheetHtmlExames(conteudo)
+    elif conteudo[:8] == _XLS_MAGIC:
         wb = xlrd.open_workbook(file_contents=conteudo)
         return _SheetXlsExames(wb.sheets()[0])
     else:
