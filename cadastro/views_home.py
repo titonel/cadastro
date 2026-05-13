@@ -635,4 +635,54 @@ def diagnostico_producao(request):
             ],
         }
 
+    # Diagnóstico do pipeline de upload_por_mes
+    if prestador_pk:
+        try:
+            from datetime import date
+            import calendar as cal
+            p = Prestador.objects.get(pk=prestador_pk)
+            uploads_conf = list(UploadProducao.objects.filter(
+                status="confirmado", data_inicio_periodo__isnull=False
+            ).order_by("data_inicio_periodo", "-enviado_em").values(
+                "pk","tipo","data_inicio_periodo","enviado_em","total_medicos","total_agendas"
+            ))
+            # Simular upload_por_mes
+            upload_por_mes = {}
+            for u in uploads_conf:
+                chave = u["data_inicio_periodo"].strftime("%Y-%m")
+                if chave not in upload_por_mes:
+                    upload_por_mes[chave] = u["pk"]
+            uploads_rep = list(upload_por_mes.values())
+
+            medicos_nomes = list(Medico.objects.filter(
+                prestador=p, ativo=True
+            ).values_list("nome_completo", flat=True))
+            nomes_upper = {n.strip().upper() for n in medicos_nomes}
+
+            pm_count = ProducaoMedico.objects.filter(
+                agenda__upload__in=uploads_rep
+            ).count()
+
+            pm_matches = [
+                {"nome": pm.nome_medico, "agenda": pm.agenda.nome_agenda,
+                 "periodo": str(pm.agenda.upload.data_inicio_periodo),
+                 "total": pm.agend_totais}
+                for pm in ProducaoMedico.objects.filter(
+                    agenda__upload__in=uploads_rep
+                ).select_related("agenda__upload")
+                if pm.nome_medico.strip().upper() in nomes_upper
+            ][:30]
+
+            data["pipeline_debug"] = {
+                "uploads_confirmados_total": len(uploads_conf),
+                "upload_por_mes": upload_por_mes,
+                "uploads_representativos": uploads_rep,
+                "medicos_prestador": medicos_nomes,
+                "nomes_upper": sorted(nomes_upper),
+                "ProducaoMedico_nos_uploads_rep": pm_count,
+                "matches_medico_prestador": pm_matches,
+            }
+        except Exception as e:
+            data["pipeline_debug_error"] = str(e)
+
     return JsonResponse(data, json_dumps_params={"ensure_ascii": False, "indent": 2})
