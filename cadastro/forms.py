@@ -33,19 +33,20 @@ class PrestadorForm(forms.ModelForm):
             "telefone_testemunha": forms.TextInput(attrs={"placeholder": "11-99999-9999",    "data-mask": "telefone", "maxlength": "13"}),
         }
 
+    # Campos cujos validators de formato devem ser removidos do form
+    # (a limpeza é feita pelos clean_* antes da validação do model)
+    _CAMPOS_DIGITOS = {"cnpj", "cpf_representante", "cep", "telefone", "telefone_testemunha"}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Torna todos os campos opcionais para permitir salvamento parcial
         campos_obrigatorios = {"nome_empresa", "cnpj"}
         for name, field in self.fields.items():
             if name not in campos_obrigatorios:
                 field.required = False
-                # Remove validadores de formato em campos opcionais para não bloquear vazios
-                if hasattr(field, 'validators'):
-                    field.validators = [
-                        v for v in field.validators
-                        if name in campos_obrigatorios
-                    ]
+            # Remove validators de formato dos campos de dígitos — a validação
+            # correta ocorre APÓS o clean_* strip a pontuação
+            if name in self._CAMPOS_DIGITOS:
+                field.validators = []
             if isinstance(field.widget, (forms.TextInput, forms.EmailInput, forms.Select, forms.DateInput)):
                 field.widget.attrs.setdefault("class", "form-control")
             elif isinstance(field.widget, forms.CheckboxSelectMultiple):
@@ -144,12 +145,16 @@ class MedicoForm(forms.ModelForm):
         self.fields["prestador"].empty_label = "— selecione —"
         self.fields["prestador"].required = False
 
+        _digitos_medico = {"cpf", "cep", "telefone"}
         for name, field in self.fields.items():
             if name in ("especialidades",):
                 continue
             if name == "ativo":
                 continue
             field.required = name == "nome_completo"
+            # Remove validators de formato — clean_* faz o strip antes
+            if name in _digitos_medico:
+                field.validators = []
             widget = field.widget
             if isinstance(widget, (forms.TextInput, forms.EmailInput,
                                    forms.Select, forms.NumberInput,
