@@ -1,6 +1,6 @@
-# Âmbar — Sistema de Gestão da AME Caraguatatuba
+# Âmbar — Sistema de Gestão
 
-Sistema web Django para gestão integrada de prestadores, contratos e produção ambulatorial da **AME Caraguatatuba** (SECONCI-SP / SUS–OSS).
+Sistema web Django para gestão integrada de prestadores, contratos e produção ambulatorial do **AME Caraguatatuba** (SECONCI-SP / SUS–OSS).
 
 ---
 
@@ -17,10 +17,10 @@ O Âmbar centraliza quatro grandes funções de gestão:
 
 ---
 
-## Identidade Visual
+## Orientações quanto à Identidade Visual
 
 **Nome do projeto:** Âmbar  
-**Paleta:** Dia Ensolarado
+**Paleta:** Dia Ensolarado (Figma)
 
 | Token | Hex | Uso |
 |---|---|---|
