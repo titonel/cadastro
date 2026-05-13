@@ -1,9 +1,9 @@
 {% extends "cadastro/base.html" %}
-{% block title %}{{ medico.nome_completo }} — Âmbar{% endblock %}
+{% block title %}{{ medico.nome_completo|title }} — Âmbar{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">👨‍⚕️ {{ medico.nome_completo }}</h1>
+  <h1 class="page-title">👨‍⚕️ {{ medico.nome_completo|title }}</h1>
   <div style="display:flex;gap:.5rem;flex-wrap:wrap">
     <a href="{% url 'cadastro:medico_edit' medico.pk %}" class="btn btn-accent btn-sm">✏️ Editar</a>
     <a href="{% url 'cadastro:medico_delete' medico.pk %}" class="btn btn-danger btn-sm">Excluir</a>
@@ -16,7 +16,7 @@
   {# ── Foto ── #}
   <div style="flex-shrink:0">
     {% if medico.foto %}
-    <img src="{{ medico.foto.url }}" alt="{{ medico.nome_completo }}"
+    <img src="{{ medico.foto.url }}" alt="{{ medico.nome_completo|title }}"
          style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:4px solid var(--amber);box-shadow:0 4px 16px rgba(128,112,64,.2)">
     {% else %}
     <div style="width:120px;height:120px;border-radius:50%;

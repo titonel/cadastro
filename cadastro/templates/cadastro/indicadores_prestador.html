@@ -109,7 +109,7 @@
             display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
   <span>✅ Produção filtrada pelos <strong>{{ medicos_do_prestador|length }} médico{{ medicos_do_prestador|length|pluralize }}</strong> vinculados:</span>
   <span style="color:var(--color-text-muted);font-weight:300">
-    {% for nome in medicos_do_prestador %}{{ nome }}{% if not forloop.last %} · {% endif %}{% endfor %}
+    {% for nome in medicos_do_prestador %}{{ nome|title }}{% if not forloop.last %} · {% endif %}{% endfor %}
   </span>
 </div>
 {% endif %}

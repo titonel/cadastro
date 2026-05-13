@@ -46,7 +46,7 @@
         <tr>
           <td style="padding:.5rem .85rem">
             {% if m.foto %}
-            <img src="{{ m.foto.url }}" alt="{{ m.nome_completo }}"
+            <img src="{{ m.foto.url }}" alt="{{ m.nome_completo|title }}"
                  style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--color-border)">
             {% else %}
             <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--amber),var(--amber-dark));
@@ -55,7 +55,7 @@
             </div>
             {% endif %}
           </td>
-          <td><a href="{% url 'cadastro:medico_detail' m.pk %}" style="font-weight:700;color:var(--color-text)">{{ m.nome_completo }}</a></td>
+          <td><a href="{% url 'cadastro:medico_detail' m.pk %}" style="font-weight:700;color:var(--color-text)">{{ m.nome_completo|title }}</a></td>
           <td>{{ m.crm|default:"—" }}</td>
           <td>{{ m.rqe|default:"—" }}</td>
           <td>

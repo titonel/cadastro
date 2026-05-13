@@ -1,10 +1,10 @@
 {% extends "cadastro/base.html" %}
 {% load static %}
-{% block title %}{% if action == "Novo" %}Novo Médico{% else %}Editar {{ medico.nome_completo }}{% endif %} — Âmbar{% endblock %}
+{% block title %}{% if action == "Novo" %}Novo Médico{% else %}Editar {{ medico.nome_completo|title }}{% endif %} — Âmbar{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">{% if action == "Novo" %}👨‍⚕️ Novo Médico{% else %}✏️ Editar — {{ medico.nome_completo }}{% endif %}</h1>
+  <h1 class="page-title">{% if action == "Novo" %}👨‍⚕️ Novo Médico{% else %}✏️ Editar — {{ medico.nome_completo|title }}{% endif %}</h1>
   <a href="{% url 'cadastro:medico_list' %}" class="btn btn-secondary btn-sm">← Médicos</a>
 </div>
 

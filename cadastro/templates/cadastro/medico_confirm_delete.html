@@ -9,7 +9,7 @@
 
 <div class="card" style="max-width:520px">
   <p style="margin-bottom:1rem">
-    Tem certeza que deseja excluir o médico <strong>{{ medico.nome_completo }}</strong>?
+    Tem certeza que deseja excluir o médico <strong>{{ medico.nome_completo|title }}</strong>?
     {% if medico.crm %}CRM {{ medico.crm }}{% endif %}
   </p>
   <p style="color:var(--color-error);font-size:.875rem;margin-bottom:1.5rem">
