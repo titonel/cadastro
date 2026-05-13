@@ -390,3 +390,62 @@ def medico_delete(request, pk):
         messages.success(request, f"Médico {nome} removido.")
         return redirect("cadastro:medico_list")
     return render(request, "cadastro/medico_confirm_delete.html", {"medico": medico})
+
+
+# ── Módulo: Mapeamento de Agendas ─────────────────────────────────────────────
+
+from .models import AgendaMapeamento
+from .producao_siresp import AGENDAS_CONHECIDAS
+from .producao_siresp_exames import AGENDAS_SIRESP_EXAMES
+
+# Conjunto completo de nomes de agenda disponíveis no SIRESP
+_TODAS_AGENDAS = sorted(AGENDAS_CONHECIDAS | AGENDAS_SIRESP_EXAMES)
+
+
+def mapeamento_list(request, prestador_pk):
+    """Lista e gerencia mapeamentos de agenda para todos os serviços de um prestador."""
+    from django.http import JsonResponse
+
+    prestador = get_object_or_404(Prestador, pk=prestador_pk)
+    servicos  = prestador.servicos.prefetch_related("mapeamentos").order_by("descricao")
+
+    # POST: adicionar ou remover mapeamento
+    if request.method == "POST":
+        action     = request.POST.get("action")
+        servico_pk = request.POST.get("servico_pk")
+        nome       = request.POST.get("nome_agenda", "").strip()
+
+        try:
+            servico = ServicoContratado.objects.get(pk=servico_pk, prestador=prestador)
+        except ServicoContratado.DoesNotExist:
+            messages.error(request, "Serviço não encontrado.")
+            return redirect("cadastro:mapeamento_list", prestador_pk=prestador_pk)
+
+        if action == "add" and nome:
+            _, criado = AgendaMapeamento.objects.get_or_create(
+                servico=servico, nome_agenda=nome
+            )
+            if criado:
+                messages.success(request, f"Agenda '{nome}' adicionada ao serviço '{servico.descricao}'.")
+            else:
+                messages.warning(request, f"Agenda '{nome}' já estava mapeada.")
+
+        elif action == "remove":
+            AgendaMapeamento.objects.filter(servico=servico, nome_agenda=nome).delete()
+            messages.success(request, f"Mapeamento '{nome}' removido.")
+
+        return redirect("cadastro:mapeamento_list", prestador_pk=prestador_pk)
+
+    return render(request, "cadastro/mapeamento_list.html", {
+        "prestador": prestador,
+        "servicos":  servicos,
+        "todas_agendas": _TODAS_AGENDAS,
+    })
+
+
+def agendas_autocomplete(request):
+    """Endpoint JSON para autocompletar nomes de agenda no select2 / datalist."""
+    from django.http import JsonResponse
+    q = request.GET.get("q", "").strip().lower()
+    resultado = [a for a in _TODAS_AGENDAS if q in a.lower()] if q else _TODAS_AGENDAS
+    return JsonResponse({"agendas": resultado[:40]})

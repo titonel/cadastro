@@ -13,6 +13,7 @@
     {% endif %}
   </div>
   <div style="display:flex;gap:.75rem">
+    <a href="{% url 'cadastro:mapeamento_list' prestador.pk %}" class="btn btn-accent btn-sm">🗂 Mapeamentos</a>
     <a href="{% url 'cadastro:prestador_edit' prestador.pk %}" class="btn btn-secondary">Editar</a>
     <a href="{% url 'cadastro:prestador_delete' prestador.pk %}" class="btn btn-danger">Excluir</a>
   </div>

@@ -87,9 +87,15 @@
       {% endif %}
     </div>
   </div>
-  <span class="meta-pill">
-    {{ series|length }} serviço{{ series|length|pluralize }} · {{ periodo_label }}
-  </span>
+  <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <span class="meta-pill">
+      {{ series|length }} serviço{{ series|length|pluralize }} · {{ periodo_label }}
+    </span>
+    <a href="{% url 'cadastro:mapeamento_list' prestador_obj.pk %}"
+       class="btn btn-secondary btn-sm" style="font-size:.75rem">
+      🗂 Configurar mapeamentos
+    </a>
+  </div>
 </div>
 
 
@@ -176,6 +182,15 @@ SERIES_DATA.forEach(serie => {
       <div>
         <div class="chart-card-title">${serie.descricao}</div>
         <div class="chart-card-meta">${serie.tipo_label} · Meta: ${serie.meta_fixa} / mês</div>
+        <div style="margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.3rem;align-items:center">
+          ${serie.agendas_mapeadas.map(a =>
+            `<span style="font-size:.7rem;padding:.15rem .55rem;border-radius:999px;
+              background:${serie.tem_mapeamento ? '#EBF4FF' : '#FFF3CD'};
+              border:1px solid ${serie.tem_mapeamento ? 'rgba(0,126,255,.25)' : 'rgba(255,191,0,.4)'};
+              color:${serie.tem_mapeamento ? '#003A80' : '#7A5500'}">${a}</span>`
+          ).join('')}
+          ${!serie.tem_mapeamento ? '<span style="font-size:.7rem;color:#7A5500;font-style:italic"> (sem mapeamento — usando nome do serviço)</span>' : ''}
+        </div>
       </div>
     </div>
     <div class="chart-legend">

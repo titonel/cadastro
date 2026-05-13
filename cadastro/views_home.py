@@ -125,7 +125,7 @@ def indicadores_prestador(request):
     from .models import (
         Prestador, Especialidade, Medico,
         ServicoContratado, UploadProducao,
-        ProducaoAgenda, ProducaoMedico,
+        ProducaoAgenda, ProducaoMedico, AgendaMapeamento,
     )
 
     prestadores    = Prestador.objects.filter(ativo=True).order_by("nome_empresa")
@@ -256,6 +256,16 @@ def indicadores_prestador(request):
             agenda_key = ag.nome_agenda.strip().upper()
             prod_index[agenda_key][chave_mes] += ag.agend_totais
 
+    # ── Pré-carregar mapeamentos de todos os serviços de uma vez ─────────────
+    # Estrutura: { servico_pk: [nome_agenda_upper, ...] }
+    mapeamentos_raw = AgendaMapeamento.objects.filter(
+        servico__prestador=prestador_obj
+    ).values_list("servico_id", "nome_agenda")
+
+    mapeamentos_por_servico = defaultdict(list)
+    for srv_pk, nome in mapeamentos_raw:
+        mapeamentos_por_servico[srv_pk].append(nome.strip().upper())
+
     # ── Montar séries por serviço contratado ─────────────────────────────────
     tipo_labels = {
         "consulta":        "Consulta Ambulatorial",
@@ -267,18 +277,34 @@ def indicadores_prestador(request):
 
     series = []
     for srv in servicos:
-        descricao_key = srv.descricao.strip().upper()
-        producao_por_mes = [
-            prod_index[descricao_key].get(chave, 0)
-            for chave in chaves
-        ]
+        # Chaves de agenda a somar: mapeamentos cadastrados + fallback (descricao)
+        chaves_agenda = mapeamentos_por_servico.get(srv.pk)
+        if not chaves_agenda:
+            # Sem mapeamento: tenta pelo próprio nome do serviço
+            chaves_agenda = [srv.descricao.strip().upper()]
+
+        producao_por_mes = []
+        for chave in chaves:
+            total = sum(
+                prod_index[ag_key].get(chave, 0)
+                for ag_key in chaves_agenda
+            )
+            producao_por_mes.append(total)
+
+        agendas_mapeadas = [
+            m.nome_agenda
+            for m in AgendaMapeamento.objects.filter(servico=srv).order_by("nome_agenda")
+        ] or [srv.descricao]
+
         series.append({
-            "id":          srv.pk,
-            "descricao":   srv.descricao or srv.get_tipo_servico_display(),
-            "tipo_label":  tipo_labels.get(srv.tipo_servico, srv.tipo_servico),
-            "meta_fixa":   srv.quantidade_estimada_mes,
-            "producao":    producao_por_mes,
-            "medicos":     sorted(medicos_do_prestador),
+            "id":             srv.pk,
+            "descricao":      srv.descricao or srv.get_tipo_servico_display(),
+            "tipo_label":     tipo_labels.get(srv.tipo_servico, srv.tipo_servico),
+            "meta_fixa":      srv.quantidade_estimada_mes,
+            "producao":       producao_por_mes,
+            "medicos":        sorted(medicos_do_prestador),
+            "agendas_mapeadas": agendas_mapeadas,
+            "tem_mapeamento": bool(mapeamentos_por_servico.get(srv.pk)),
         })
 
     periodo_label = (

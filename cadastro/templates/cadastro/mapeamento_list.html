@@ -1,0 +1,112 @@
+{% extends "cadastro/base.html" %}
+{% block title %}Mapeamentos de Agenda — {{ prestador.nome_empresa }} — Âmbar{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">🗂 Mapeamentos de Agenda</h1>
+    <p style="font-size:.875rem;color:var(--color-text-muted);margin-top:.25rem">
+      {{ prestador.nome_empresa }}
+    </p>
+  </div>
+  <div style="display:flex;gap:.5rem">
+    <a href="{% url 'cadastro:prestador_detail' prestador.pk %}" class="btn btn-secondary btn-sm">← Prestador</a>
+    <a href="{% url 'cadastro:indicadores_prestador' %}?prestador={{ prestador.pk }}" class="btn btn-accent btn-sm">📊 Ver Dashboard</a>
+  </div>
+</div>
+
+<div style="background:#EBF4FF;border-left:4px solid var(--blue);border-radius:var(--radius);
+            padding:.85rem 1.1rem;margin-bottom:1.5rem;font-size:.875rem;color:#003A80">
+  <strong>Como funciona:</strong> para cada serviço contratado, indique quais agendas do SIRESP
+  correspondem a ele. O dashboard irá somar a produção de todas as agendas mapeadas para compor
+  a série de cada serviço.
+  <br>Exemplo: o serviço <em>Cardiologia</em> pode mapear as agendas
+  <em>Cardiologia</em>, <em>Cardiologia - Hipertensão</em> e <em>Cardiologia - Saude do Homem</em>.
+</div>
+
+{% if not servicos %}
+<div style="text-align:center;padding:3rem;color:var(--color-text-muted)">
+  <p>Este prestador não possui serviços contratados cadastrados.</p>
+  <a href="{% url 'cadastro:prestador_edit' prestador.pk %}" class="btn btn-primary" style="margin-top:1rem">
+    Cadastrar Serviços
+  </a>
+</div>
+{% else %}
+
+{% for servico in servicos %}
+<div class="card" style="margin-bottom:1.25rem">
+
+  {# ── Cabeçalho do serviço ── #}
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;
+              gap:1rem;flex-wrap:wrap;margin-bottom:1rem;padding-bottom:.75rem;
+              border-bottom:1px solid var(--color-border)">
+    <div>
+      <div style="font-weight:700;font-size:1rem">{{ servico.descricao }}</div>
+      <div style="font-size:.8rem;color:var(--color-text-muted);margin-top:.2rem">
+        {{ servico.get_tipo_servico_display }} ·
+        Meta: <strong>{{ servico.quantidade_estimada_mes }}</strong>/mês ·
+        R$ {{ servico.valor_unitario }}
+      </div>
+    </div>
+    <span style="font-size:.75rem;font-weight:700;background:rgba(255,191,0,.12);
+                 border:1px solid rgba(255,191,0,.35);color:var(--amber-dark);
+                 padding:.2rem .7rem;border-radius:999px">
+      {{ servico.mapeamentos.count }} agenda{{ servico.mapeamentos.count|pluralize }} mapeada{{ servico.mapeamentos.count|pluralize }}
+    </span>
+  </div>
+
+  {# ── Agendas já mapeadas ── #}
+  <div id="mapeamentos-{{ servico.pk }}" style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;min-height:2rem">
+    {% for m in servico.mapeamentos.all %}
+    <form method="post" style="margin:0">
+      {% csrf_token %}
+      <input type="hidden" name="servico_pk"  value="{{ servico.pk }}">
+      <input type="hidden" name="nome_agenda" value="{{ m.nome_agenda }}">
+      <input type="hidden" name="action"      value="remove">
+      <button type="submit"
+              style="display:inline-flex;align-items:center;gap:.35rem;
+                     background:#EBF4FF;border:1px solid rgba(0,126,255,.3);
+                     color:#003A80;font-size:.8rem;font-weight:600;
+                     padding:.3rem .75rem;border-radius:999px;cursor:pointer;
+                     transition:background .15s"
+              onmouseover="this.style.background='#F5DCDC';this.style.borderColor='rgba(192,57,43,.4)';this.style.color='#7C1C1C'"
+              onmouseout="this.style.background='#EBF4FF';this.style.borderColor='rgba(0,126,255,.3)';this.style.color='#003A80'"
+              title="Remover mapeamento">
+        {{ m.nome_agenda }} ✕
+      </button>
+    </form>
+    {% empty %}
+    <span style="color:var(--color-text-muted);font-size:.8125rem;font-style:italic">
+      Nenhuma agenda mapeada ainda.
+    </span>
+    {% endfor %}
+  </div>
+
+  {# ── Adicionar nova agenda ── #}
+  <form method="post" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+    {% csrf_token %}
+    <input type="hidden" name="servico_pk" value="{{ servico.pk }}">
+    <input type="hidden" name="action"     value="add">
+    <input type="text"
+           name="nome_agenda"
+           list="agendas-datalist"
+           placeholder="Buscar agenda do SIRESP…"
+           autocomplete="off"
+           required
+           class="form-control"
+           style="max-width:380px">
+    <button type="submit" class="btn btn-primary btn-sm">+ Adicionar</button>
+  </form>
+
+</div>
+{% endfor %}
+
+{# datalist global com todas as agendas #}
+<datalist id="agendas-datalist">
+  {% for nome in todas_agendas %}
+  <option value="{{ nome }}">
+  {% endfor %}
+</datalist>
+
+{% endif %}
+{% endblock %}

@@ -475,3 +475,36 @@ class Medico(models.Model):
         if loc:
             partes.append(f"{loc} – CEP: {self.cep}" if self.cep else loc)
         return ", ".join(partes)
+
+
+class AgendaMapeamento(models.Model):
+    """
+    Tabela de correspondência entre um ServicoContratado e os nomes
+    de agenda do SIRESP que representam aquele serviço.
+
+    Exemplo:
+      ServicoContratado(descricao="Cardiologia") →
+        AgendaMapeamento(nome_agenda="Cardiologia")
+        AgendaMapeamento(nome_agenda="Cardiologia - Hipertensão")
+        AgendaMapeamento(nome_agenda="Cardiologia - Saude do Homem")
+    """
+    servico = models.ForeignKey(
+        ServicoContratado,
+        on_delete=models.CASCADE,
+        related_name="mapeamentos",
+        verbose_name="Serviço Contratado",
+    )
+    nome_agenda = models.CharField(
+        "Nome da Agenda no SIRESP",
+        max_length=200,
+        help_text="Nome exato como aparece no relatório do SIRESP (P05 Produção x Profissional)",
+    )
+
+    class Meta:
+        verbose_name = "Mapeamento de Agenda"
+        verbose_name_plural = "Mapeamentos de Agenda"
+        ordering = ["servico", "nome_agenda"]
+        unique_together = [("servico", "nome_agenda")]
+
+    def __str__(self):
+        return f"{self.servico.descricao} → {self.nome_agenda}"

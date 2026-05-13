@@ -36,6 +36,10 @@ urlpatterns = [
     path("medicos/<int:pk>/editar/", views.medico_edit, name="medico_edit"),
     path("medicos/<int:pk>/excluir/", views.medico_delete, name="medico_delete"),
 
+    # ── Módulo: Mapeamento de Agendas ─────────────────────────────────────────
+    path("prestadores/<int:prestador_pk>/mapeamentos/", views.mapeamento_list, name="mapeamento_list"),
+    path("agendas/autocomplete/", views.agendas_autocomplete, name="agendas_autocomplete"),
+
     # ── Módulo: Cadastro — Importação de Contratos via PDF ────────────────────
     path("contrato/upload/", views.contrato_upload, name="contrato_upload"),
     path("contrato/<int:pk>/revisar/", views.contrato_revisao, name="contrato_revisao"),
