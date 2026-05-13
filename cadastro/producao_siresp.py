@@ -14,9 +14,13 @@ Regras de identificação na coluna A:
 
 Formatos suportados:
   .xlsx / .xlsm  → openpyxl
-  .xls  (legado) → xlrd  (pip install "xlrd==1.2.0")
+  .xls  (legado binário)  → xlrd  (pip install "xlrd==1.2.0")
+  .xls  (HTML disfarçado) → pandas.read_html()
+    O SIRESP exporta arquivos .xls que são, na verdade, documentos HTML
+    completos (ISO-8859-1). Esses arquivos NÃO possuem a assinatura binária
+    OLE2/BIFF e são detectados pelo prefixo "<" (tag HTML) no conteúdo.
 
-O formato é detectado automaticamente pelo cabeçalho binário do arquivo,
+O formato é detectado automaticamente pelo cabeçalho do arquivo,
 não pela extensão.
 
 NOTA: upload.arquivo.read() após upload.save() retorna bytes vazios porque
@@ -30,6 +34,7 @@ from datetime import date, datetime
 from typing import Optional
 
 import openpyxl
+import pandas as pd
 import xlrd
 
 from .models import (
@@ -39,6 +44,10 @@ from .models import (
 
 # Assinatura binária do formato XLS legado (BIFF/OLE2 Compound Document)
 _XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+# O SIRESP exporta arquivos .xls que são HTML puro (ISO-8859-1).
+# Detectamos pelo byte inicial "<" (0x3C), característico de tags HTML.
+_HTML_MAGIC = b"<"
 
 # Lista canônica de agendas (para validação cruzada futura)
 AGENDAS_CONHECIDAS = {
@@ -243,13 +252,86 @@ class _SheetXls:
             yield dados
 
 
+class _SheetHtml:
+    """
+    Wrapper para arquivos .xls exportados pelo SIRESP que são, na verdade,
+    documentos HTML (ISO-8859-1) disfarçados de XLS.
+
+    O pandas.read_html() localiza a maior tabela do documento e itera
+    suas linhas a partir da linha 10 (índice 9 após os 4 cabeçalhos
+    hierárquicos do SIRESP).
+
+    O campo de período é extraído a partir do texto de metadados presente
+    nas tabelas menores que precedem a tabela principal.
+    """
+
+    # O SIRESP usa 4 linhas de cabeçalho hierárquico (colspan/rowspan)
+    # antes dos dados propriamente ditos.
+    _N_CABECALHOS = 4
+
+    def __init__(self, conteudo: bytes):
+        html = conteudo.decode("iso-8859-1", errors="replace")
+        # thousands='.' e decimal=',' tratam a formatação numérica brasileira:
+        # "1.234" → 1234  e  "95,51" → 95.51
+        self._tables = pd.read_html(
+            io.StringIO(html),
+            header=None,
+            thousands=".",
+            decimal=",",
+        )
+        self._tabela_principal = self._identificar_tabela_principal()
+        self.n_colunas = len(COLUNAS_SIRESP)
+
+    def _identificar_tabela_principal(self) -> pd.DataFrame:
+        """Retorna o DataFrame com mais linhas — é sempre a tabela de dados."""
+        if not self._tables:
+            raise ValueError("Nenhuma tabela HTML encontrada no arquivo.")
+        return max(self._tables, key=len)
+
+    def cell_b2(self) -> str:
+        """
+        Extrai o texto de período varrendendo todas as tabelas de metadados.
+        O SIRESP grava o período num campo como:
+          "Unidade Executante:AME X  Período:01-04-2026a30-04-2026  ..."
+        """
+        for table in self._tables:
+            for valor in table.values.flatten():
+                if isinstance(valor, str) and "Período:" in valor:
+                    return valor
+        return ""
+
+    def iter_linhas(self):
+        """
+        Itera as linhas de dados (a partir da linha 10, ou seja, após os
+        4 cabeçalhos hierárquicos do SIRESP) retornando dicionários com
+        os nomes de COLUNAS_SIRESP como chaves.
+        """
+        df = self._tabela_principal.iloc[self._N_CABECALHOS:].reset_index(drop=True)
+        n = min(self.n_colunas, df.shape[1])
+        for _, row in df.iterrows():
+            dados = {}
+            for col_idx in range(n):
+                nome = COLUNAS_SIRESP[col_idx]
+                val = row.iloc[col_idx]
+                if pd.isna(val):
+                    val = ""
+                elif not isinstance(val, str):
+                    val = str(val)
+                dados[nome] = val
+            yield dados
+
+
 def _abrir_sheet(conteudo: bytes):
     """
-    Detecta o formato pelo cabeçalho binário e retorna o wrapper correto.
-      XLS (BIFF): primeiros 8 bytes == _XLS_MAGIC  → _SheetXls
-      Qualquer outro caso                           → _SheetXlsx (ZIP/OOXML)
+    Detecta o formato pelo cabeçalho do arquivo e retorna o wrapper correto.
+
+      HTML (SIRESP): primeiro byte == "<"           → _SheetHtml
+      XLS   (BIFF) : primeiros 8 bytes == _XLS_MAGIC → _SheetXls
+      Qualquer outro caso (ZIP/OOXML)               → _SheetXlsx
     """
-    if conteudo[:8] == _XLS_MAGIC:
+    if conteudo[:1] == _HTML_MAGIC:
+        return _SheetHtml(conteudo)
+    elif conteudo[:8] == _XLS_MAGIC:
         wb = xlrd.open_workbook(file_contents=conteudo)
         return _SheetXls(wb.sheets()[0])
     else:
