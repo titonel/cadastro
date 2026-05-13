@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.db.models import Q, Sum, F
-from .models import Prestador, Especialidade, ContratoUpload, StatusImportacao
+from .models import Prestador, Especialidade, ContratoUpload, StatusImportacao, ServicoContratado, Medico, AgendaMapeamento
 from .forms import PrestadorForm, ServicoFormSet, UploadContratoForm
 from .extrator import extrair_contrato
 
@@ -317,7 +317,6 @@ def contrato_ignorar(request, pk):
 
 # ── Módulo: Cadastro de Médicos ───────────────────────────────────────────────
 
-from .models import Medico
 from .forms import MedicoForm
 
 
@@ -394,7 +393,6 @@ def medico_delete(request, pk):
 
 # ── Módulo: Mapeamento de Agendas ─────────────────────────────────────────────
 
-from .models import AgendaMapeamento
 from .producao_siresp import AGENDAS_CONHECIDAS
 from .producao_siresp_exames import AGENDAS_SIRESP_EXAMES
 
