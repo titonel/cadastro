@@ -1,5 +1,17 @@
 {% extends "cadastro/base.html" %}
-{% block title %}{{ medico.nome_completo|title }} — Âmbar{% endblock %}
+{% block title %}{{ medico.nome_completo|title }} — Âmbar
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('[data-display-mask]').forEach(function (el) {
+    const tipo = el.dataset.displayMask;
+    const val  = el.textContent.trim();
+    if (val && window.AmbarMascaras && window.AmbarMascaras[tipo]) {
+      el.textContent = window.AmbarMascaras[tipo](val);
+    }
+  });
+});
+</script>
+{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -63,7 +75,7 @@
         <div class="detail-label">Telefone / WhatsApp</div>
         <div class="detail-value">
           {% if medico.telefone %}
-          <a href="tel:{{ medico.telefone }}" style="color:var(--color-accent)">{{ medico.telefone }}</a>
+          <a href="tel:<span data-display-mask="telefone">{{ medico.telefone }}</span>" style="color:var(--color-accent)"><span data-display-mask="telefone">{{ medico.telefone }}</span></a>
           {% else %}—{% endif %}
         </div>
       </div>
@@ -117,4 +129,16 @@
   Cadastrado em {{ medico.criado_em|date:"d/m/Y \à\s H:i" }} ·
   Atualizado em {{ medico.atualizado_em|date:"d/m/Y \à\s H:i" }}
 </p>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('[data-display-mask]').forEach(function (el) {
+    const tipo = el.dataset.displayMask;
+    const val  = el.textContent.trim();
+    if (val && window.AmbarMascaras && window.AmbarMascaras[tipo]) {
+      el.textContent = window.AmbarMascaras[tipo](val);
+    }
+  });
+});
+</script>
 {% endblock %}

@@ -1,5 +1,18 @@
 {% extends "cadastro/base.html" %}
-{% block title %}{{ prestador.nome_empresa }} — Âmbar{% endblock %}
+{% block title %}{{ prestador.nome_empresa }} — Âmbar
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Formatar campos de detalhe para exibição visual
+  document.querySelectorAll('[data-display-mask]').forEach(function (el) {
+    const tipo = el.dataset.displayMask;
+    const val  = el.textContent.trim();
+    if (val && window.AmbarMascaras && window.AmbarMascaras[tipo]) {
+      el.textContent = window.AmbarMascaras[tipo](val);
+    }
+  });
+});
+</script>
+{% endblock %}
 {% block content %}
 <div class="page-header">
   <div>
@@ -38,11 +51,11 @@
   <div class="card">
     <h2 class="form-section-title">Dados da Empresa</h2>
     <div style="display:grid;gap:.75rem">
-      <div><span class="detail-label">CNPJ</span><div class="detail-value">{{ prestador.cnpj }}</div></div>
+      <div><span class="detail-label">CNPJ</span><div class="detail-value"><span data-display-mask="cnpj">{{ prestador.cnpj }}</span></div></div>
       <div><span class="detail-label">Inscrição Municipal</span><div class="detail-value">{{ prestador.inscricao_municipal|default:"—" }}</div></div>
       <div><span class="detail-label">Inscrição Estadual</span><div class="detail-value">{{ prestador.inscricao_estadual }}</div></div>
       <div><span class="detail-label">Endereço</span><div class="detail-value">{{ prestador.endereco_completo }}</div></div>
-      <div><span class="detail-label">Telefone</span><div class="detail-value">{{ prestador.telefone }}</div></div>
+      <div><span class="detail-label">Telefone</span><div class="detail-value"><span data-display-mask="telefone">{{ prestador.telefone }}</span></div></div>
       <div><span class="detail-label">E-mail</span><div class="detail-value">{{ prestador.email }}</div></div>
     </div>
   </div>
@@ -50,13 +63,13 @@
     <h2 class="form-section-title">Representante Legal</h2>
     <div style="display:grid;gap:.75rem;margin-bottom:1.25rem">
       <div><span class="detail-label">Nome</span><div class="detail-value">{{ prestador.nome_representante }}</div></div>
-      <div><span class="detail-label">CPF</span><div class="detail-value">{{ prestador.cpf_representante }}</div></div>
+      <div><span class="detail-label">CPF</span><div class="detail-value"><span data-display-mask="cpf">{{ prestador.cpf_representante }}</span></div></div>
       <div><span class="detail-label">CRM</span><div class="detail-value">{{ prestador.crm_representante }}</div></div>
     </div>
     <h2 class="form-section-title">Testemunha</h2>
     <div style="display:grid;gap:.75rem">
       <div><span class="detail-label">Nome</span><div class="detail-value">{{ prestador.nome_testemunha }}</div></div>
-      <div><span class="detail-label">Telefone</span><div class="detail-value">{{ prestador.telefone_testemunha }}</div></div>
+      <div><span class="detail-label">Telefone</span><div class="detail-value"><span data-display-mask="telefone">{{ prestador.telefone_testemunha }}</span></div></div>
       <div><span class="detail-label">E-mail</span><div class="detail-value">{{ prestador.email_testemunha }}</div></div>
     </div>
   </div>
@@ -110,4 +123,17 @@
   <p style="color:var(--color-text-muted)">Nenhum serviço cadastrado.</p>
   {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Formatar campos de detalhe para exibição visual
+  document.querySelectorAll('[data-display-mask]').forEach(function (el) {
+    const tipo = el.dataset.displayMask;
+    const val  = el.textContent.trim();
+    if (val && window.AmbarMascaras && window.AmbarMascaras[tipo]) {
+      el.textContent = window.AmbarMascaras[tipo](val);
+    }
+  });
+});
+</script>
 {% endblock %}

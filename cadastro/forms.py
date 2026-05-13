@@ -26,9 +26,11 @@ class PrestadorForm(forms.ModelForm):
         widgets = {
             "data_inicio_contrato": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "data_fim_contrato": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "cnpj": forms.TextInput(attrs={"placeholder": "00.000.000/0000-00"}),
-            "cpf_representante": forms.TextInput(attrs={"placeholder": "000.000.000-00"}),
-            "cep": forms.TextInput(attrs={"placeholder": "00000-000"}),
+            "cnpj":              forms.TextInput(attrs={"placeholder": "00.000.000/0000-00", "data-mask": "cnpj",     "maxlength": "18"}),
+            "cpf_representante": forms.TextInput(attrs={"placeholder": "000.000.000-00",    "data-mask": "cpf",      "maxlength": "14"}),
+            "cep":               forms.TextInput(attrs={"placeholder": "00000-000",          "data-mask": "cep",      "maxlength": "9"}),
+            "telefone":          forms.TextInput(attrs={"placeholder": "11-99999-9999",      "data-mask": "telefone", "maxlength": "13"}),
+            "telefone_testemunha": forms.TextInput(attrs={"placeholder": "11-99999-9999",    "data-mask": "telefone", "maxlength": "13"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -50,6 +52,26 @@ class PrestadorForm(forms.ModelForm):
                 field.widget.attrs.setdefault("class", "checkbox-list")
         self.fields["data_inicio_contrato"].input_formats = ["%Y-%m-%d"]
         self.fields["data_fim_contrato"].input_formats = ["%Y-%m-%d"]
+
+    @staticmethod
+    def _so_digitos(valor):
+        import re
+        return re.sub(r"\D", "", valor or "")
+
+    def clean_cnpj(self):
+        return self._so_digitos(self.cleaned_data.get("cnpj", ""))
+
+    def clean_cpf_representante(self):
+        return self._so_digitos(self.cleaned_data.get("cpf_representante", ""))
+
+    def clean_cep(self):
+        return self._so_digitos(self.cleaned_data.get("cep", ""))
+
+    def clean_telefone(self):
+        return self._so_digitos(self.cleaned_data.get("telefone", ""))
+
+    def clean_telefone_testemunha(self):
+        return self._so_digitos(self.cleaned_data.get("telefone_testemunha", ""))
 
 
 ServicoFormSet = inlineformset_factory(
@@ -109,9 +131,9 @@ class MedicoForm(forms.ModelForm):
             "ativo",
         ]
         widgets = {
-            "cpf":      forms.TextInput(attrs={"placeholder": "000.000.000-00"}),
-            "cep":      forms.TextInput(attrs={"placeholder": "00000-000", "id": "id_cep_medico"}),
-            "telefone": forms.TextInput(attrs={"placeholder": "(13) 00000-0000"}),
+            "cpf":      forms.TextInput(attrs={"placeholder": "000.000.000-00",   "data-mask": "cpf",      "maxlength": "14"}),
+            "cep":      forms.TextInput(attrs={"placeholder": "00000-000",           "data-mask": "cep",      "maxlength": "9",  "id": "id_cep_medico"}),
+            "telefone": forms.TextInput(attrs={"placeholder": "11-99999-9999",       "data-mask": "telefone", "maxlength": "13"}),
             "foto":     forms.FileInput(attrs={"accept": "image/*"}),
         }
 
@@ -135,3 +157,17 @@ class MedicoForm(forms.ModelForm):
                 widget.attrs.setdefault("class", "form-control")
             elif isinstance(widget, forms.FileInput):
                 widget.attrs.setdefault("class", "form-control")
+
+    @staticmethod
+    def _so_digitos(valor):
+        import re
+        return re.sub(r"\D", "", valor or "")
+
+    def clean_cpf(self):
+        return self._so_digitos(self.cleaned_data.get("cpf", ""))
+
+    def clean_cep(self):
+        return self._so_digitos(self.cleaned_data.get("cep", ""))
+
+    def clean_telefone(self):
+        return self._so_digitos(self.cleaned_data.get("telefone", ""))
