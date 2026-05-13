@@ -2,85 +2,76 @@
  * mascaras.js — Âmbar
  * Máscara visual para CPF, CNPJ, CEP e Telefone.
  * O banco recebe apenas dígitos; a formatação é só visual.
- *
  * Uso: <input data-mask="cpf|cnpj|cep|telefone">
  */
 (function () {
   "use strict";
 
-  const MASCARAS = {
-    // 000.000.000-00
-    cpf: function (v) {
-      v = v.replace(/\D/g, "").slice(0, 11);
-      if (v.length > 9) return v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, "$1.$2.$3-$4");
-      if (v.length > 6) return v.replace(/(\d{3})(\d{3})(\d{0,3})/, "$1.$2.$3");
-      if (v.length > 3) return v.replace(/(\d{3})(\d{0,3})/, "$1.$2");
-      return v;
-    },
+  function fmt_cpf(d) {
+    // d = até 11 dígitos
+    if (d.length > 9) return d.slice(0,3)+'.'+d.slice(3,6)+'.'+d.slice(6,9)+'-'+d.slice(9,11);
+    if (d.length > 6) return d.slice(0,3)+'.'+d.slice(3,6)+'.'+d.slice(6);
+    if (d.length > 3) return d.slice(0,3)+'.'+d.slice(3);
+    return d;
+  }
 
-    // 00.000.000/0000-00
-    cnpj: function (v) {
-      v = v.replace(/\D/g, "").slice(0, 14);
-      if (v.length > 12) return v.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2})/, "$1.$2.$3/$4-$5");
-      if (v.length > 8)  return v.replace(/(\d{2})(\d{3})(\d{3})(\d{0,4})/, "$1.$2.$3/$4");
-      if (v.length > 5)  return v.replace(/(\d{2})(\d{3})(\d{0,3})/, "$1.$2.$3");
-      if (v.length > 2)  return v.replace(/(\d{2})(\d{0,3})/, "$1.$2");
-      return v;
-    },
+  function fmt_cnpj(d) {
+    // d = até 14 dígitos
+    if (d.length > 12) return d.slice(0,2)+'.'+d.slice(2,5)+'.'+d.slice(5,8)+'/'+d.slice(8,12)+'-'+d.slice(12,14);
+    if (d.length > 8)  return d.slice(0,2)+'.'+d.slice(2,5)+'.'+d.slice(5,8)+'/'+d.slice(8);
+    if (d.length > 5)  return d.slice(0,2)+'.'+d.slice(2,5)+'.'+d.slice(5);
+    if (d.length > 2)  return d.slice(0,2)+'.'+d.slice(2);
+    return d;
+  }
 
-    // 00000-000
-    cep: function (v) {
-      v = v.replace(/\D/g, "").slice(0, 8);
-      if (v.length > 5) return v.replace(/(\d{5})(\d{0,3})/, "$1-$2");
-      return v;
-    },
+  function fmt_cep(d) {
+    // d = até 8 dígitos
+    if (d.length > 5) return d.slice(0,5)+'-'+d.slice(5,8);
+    return d;
+  }
 
-    // 11-99999-9999 (11 dígitos: DDD + 9 dígitos)
-    telefone: function (v) {
-      v = v.replace(/\D/g, "").slice(0, 11);
-      if (v.length > 6) return v.replace(/(\d{2})(\d{5})(\d{0,4})/, "$1-$2-$3");
-      if (v.length > 2) return v.replace(/(\d{2})(\d{0,5})/, "$1-$2");
-      return v;
-    },
-  };
+  function fmt_tel(d) {
+    // d = até 11 dígitos: DDD(2) + 9 dígitos
+    if (d.length > 6) return d.slice(0,2)+'-'+d.slice(2,7)+'-'+d.slice(7,11);
+    if (d.length > 2) return d.slice(0,2)+'-'+d.slice(2);
+    return d;
+  }
 
-  /**
-   * Aplica máscara visual num campo sem alterar o valor que vai ao banco.
-   * O formulário Django lê o .value do input — o clean_* no form strip os não-dígitos.
-   */
-  function aplicarMascara(input, tipo) {
-    const fn = MASCARAS[tipo];
+  const MAXD = { cpf: 11, cnpj: 14, cep: 8, telefone: 11 };
+  const FMT  = { cpf: fmt_cpf, cnpj: fmt_cnpj, cep: fmt_cep, telefone: fmt_tel };
+
+  function bind(input) {
+    const tipo = input.dataset.mask;
+    const fn   = FMT[tipo];
+    const max  = MAXD[tipo];
     if (!fn) return;
 
-    input.addEventListener("input", function () {
-      const pos = this.selectionStart;
-      const digitos = this.value.replace(/\D/g, "").length;
-      this.value = fn(this.value);
-      // Reposicionar cursor aproximadamente
-      try { this.setSelectionRange(pos, pos); } catch (_) {}
+    input.addEventListener("input", function (e) {
+      // Extrair apenas dígitos e limitar ao máximo
+      const digitos = this.value.replace(/\D/g, "").slice(0, max);
+      // Calcular posição do cursor baseado em quantos dígitos foram digitados
+      const formatted = fn(digitos);
+      this.value = formatted;
+      // Posicionar cursor sempre no final
+      this.setSelectionRange(formatted.length, formatted.length);
     });
 
-    // Formatar valor já existente no carregamento da página
+    // Formatar valor já existente no carregamento (edição de registro)
     if (input.value) {
-      input.value = fn(input.value);
+      const digitos = input.value.replace(/\D/g, "").slice(0, max);
+      input.value = fn(digitos);
     }
   }
 
-  /**
-   * Formata para exibição readonly (detail pages, etc.)
-   * Não precisa de evento — só transforma o texto.
-   */
+  // Expõe para páginas de detalhe (só formata, sem eventos)
   window.AmbarMascaras = {
-    cpf:      (v) => MASCARAS.cpf(v),
-    cnpj:     (v) => MASCARAS.cnpj(v),
-    cep:      (v) => MASCARAS.cep(v),
-    telefone: (v) => MASCARAS.telefone(v),
+    cpf:      (v) => fmt_cpf (v.replace(/\D/g,"").slice(0,11)),
+    cnpj:     (v) => fmt_cnpj(v.replace(/\D/g,"").slice(0,14)),
+    cep:      (v) => fmt_cep (v.replace(/\D/g,"").slice(0, 8)),
+    telefone: (v) => fmt_tel (v.replace(/\D/g,"").slice(0,11)),
   };
 
-  // Inicializar todos os inputs com data-mask ao carregar o DOM
   document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll("[data-mask]").forEach(function (input) {
-      aplicarMascara(input, input.dataset.mask);
-    });
+    document.querySelectorAll("[data-mask]").forEach(bind);
   });
 })();
